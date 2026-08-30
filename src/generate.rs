@@ -34,9 +34,12 @@ impl Deployable {
         let mut doc = self.doc.clone();
         doc.frontmatter.set("name", self.deployed_name());
         doc.frontmatter.set("source_alias", self.alias.clone());
-        doc.frontmatter.set("upstream_name", self.upstream_name.clone());
-        doc.frontmatter.set("upstream_url", self.upstream_url.clone());
-        doc.frontmatter.set("upstream_coordinate", self.upstream_coordinate.clone());
+        doc.frontmatter
+            .set("upstream_name", self.upstream_name.clone());
+        doc.frontmatter
+            .set("upstream_url", self.upstream_url.clone());
+        doc.frontmatter
+            .set("upstream_coordinate", self.upstream_coordinate.clone());
         doc.render()
     }
 
@@ -108,7 +111,10 @@ mod tests {
         let (_source, deployable) = deployable("mp", "handoff", "body\n");
         let rendered = deployable.rendered_skill_file();
         for word in ["date", "time", "deployed_at", "generated_at"] {
-            assert!(!rendered.contains(word), "{word} appears in generated frontmatter");
+            assert!(
+                !rendered.contains(word),
+                "{word} appears in generated frontmatter"
+            );
         }
     }
 
@@ -120,7 +126,10 @@ mod tests {
 
         build(&root, std::slice::from_ref(&deployable)).unwrap();
 
-        assert_eq!(fs::read_to_string(root.join("mp:handoff/ref/extra.md")).unwrap(), "extra");
+        assert_eq!(
+            fs::read_to_string(root.join("mp:handoff/ref/extra.md")).unwrap(),
+            "extra"
+        );
         let skill_file = fs::read_to_string(root.join("mp:handoff/SKILL.md")).unwrap();
         assert_eq!(skill_file, deployable.rendered_skill_file());
     }

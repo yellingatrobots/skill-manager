@@ -29,7 +29,12 @@ pub fn run(paths: &Paths, alias: Option<&str>, no_apply: bool) -> Result<UpdateR
 
     // Everything is staged before the lock changes: one fetch failure aborts.
     for source in &selected {
-        let locked = stage(source, previous.sources.get(&source.alias), &store, &mut failures)?;
+        let locked = stage(
+            source,
+            previous.sources.get(&source.alias),
+            &store,
+            &mut failures,
+        )?;
         staged.insert(source.alias.clone(), locked);
     }
 
@@ -38,7 +43,9 @@ pub fn run(paths: &Paths, alias: Option<&str>, no_apply: bool) -> Result<UpdateR
 
     let unlockable = unlockable_selections(&manifest, &lock);
     for missing in &unlockable {
-        failures.push(format!("`{missing}` could not be locked; adjust the manifest"));
+        failures.push(format!(
+            "`{missing}` could not be locked; adjust the manifest"
+        ));
     }
 
     let applied = if no_apply || !unlockable.is_empty() {
@@ -61,7 +68,11 @@ pub fn run(paths: &Paths, alias: Option<&str>, no_apply: bool) -> Result<UpdateR
 
 fn select_sources<'a>(manifest: &'a Manifest, alias: Option<&str>) -> Result<Vec<&'a Source>> {
     match alias {
-        None => Ok(manifest.sources.values().filter(|s| !s.transport.is_local()).collect()),
+        None => Ok(manifest
+            .sources
+            .values()
+            .filter(|s| !s.transport.is_local())
+            .collect()),
         Some(alias) => {
             let source = manifest.source(alias)?;
             if source.transport.is_local() {
@@ -81,7 +92,14 @@ fn stage(
     failures: &mut Failures,
 ) -> Result<LockedSource> {
     let required: Vec<String> = source.skills.clone().unwrap_or_default();
-    stage_selection(source, previous, store, failures, &|name| source.selects(name), &required)
+    stage_selection(
+        source,
+        previous,
+        store,
+        failures,
+        &|name| source.selects(name),
+        &required,
+    )
 }
 
 /// Staging for an explicit set of skills, which `add` needs before the manifest
@@ -104,9 +122,24 @@ pub(crate) fn stage_selection(
 
     match &source.transport {
         crate::manifest::Transport::WellKnown { endpoint } => stage_well_known(
-            source, endpoint, store, previous, &mut locked, failures, selects, required,
+            source,
+            endpoint,
+            store,
+            previous,
+            &mut locked,
+            failures,
+            selects,
+            required,
         )?,
-        _ => stage_git(source, store, previous, &mut locked, failures, selects, required)?,
+        _ => stage_git(
+            source,
+            store,
+            previous,
+            &mut locked,
+            failures,
+            selects,
+            required,
+        )?,
     }
     Ok(locked)
 }
@@ -140,7 +173,9 @@ fn stage_git(
         );
     }
 
-    retain_previous(source, &discovery, previous, locked, failures, selects, required);
+    retain_previous(
+        source, &discovery, previous, locked, failures, selects, required,
+    );
     Ok(())
 }
 
@@ -177,7 +212,9 @@ fn stage_well_known(
         discovery.invalid.extend(found.invalid);
     }
 
-    retain_previous(source, &discovery, previous, locked, failures, selects, required);
+    retain_previous(
+        source, &discovery, previous, locked, failures, selects, required,
+    );
     Ok(())
 }
 
@@ -195,7 +232,10 @@ fn retain_previous(
         if !selects(&invalid.name) {
             continue;
         }
-        failures.push(format!("{}:{}: {}", source.alias, invalid.name, invalid.reason));
+        failures.push(format!(
+            "{}:{}: {}",
+            source.alias, invalid.name, invalid.reason
+        ));
         if let Some(entry) = previous.and_then(|previous| previous.skills.get(&invalid.name)) {
             locked.skills.insert(invalid.name.clone(), entry.clone());
         }
@@ -203,11 +243,17 @@ fn retain_previous(
 
     for selected in required {
         if locked.skills.contains_key(selected)
-            || discovery.invalid.iter().any(|invalid| &invalid.name == selected)
+            || discovery
+                .invalid
+                .iter()
+                .any(|invalid| &invalid.name == selected)
         {
             continue;
         }
-        failures.push(format!("{}:{selected}: not found in the source", source.alias));
+        failures.push(format!(
+            "{}:{selected}: not found in the source",
+            source.alias
+        ));
         if let Some(entry) = previous.and_then(|previous| previous.skills.get(selected)) {
             locked.skills.insert(selected.clone(), entry.clone());
         }
@@ -233,7 +279,10 @@ fn merge(
     let mut sources = previous.sources;
     if alias.is_none() {
         sources.retain(|alias, _| {
-            manifest.sources.get(alias).is_some_and(|source| !source.transport.is_local())
+            manifest
+                .sources
+                .get(alias)
+                .is_some_and(|source| !source.transport.is_local())
         });
     }
     sources.extend(staged);
@@ -267,7 +316,10 @@ mod tests {
         let upstream = git_origin(&[("skills/handoff/SKILL.md", &skill_text("handoff", "body\n"))]);
         write_manifest(
             &home,
-            &format!("version = 1\n[sources.mp]\ngit = \"{}\"\ndir = \"skills\"\n", upstream.path().display()),
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\ndir = \"skills\"\n",
+                upstream.path().display()
+            ),
         );
 
         let report = run(&home.paths, None, false).unwrap();
@@ -286,25 +338,42 @@ mod tests {
     fn no_apply_leaves_the_deployed_tree_alone() {
         let home = home();
         let upstream = git_origin(&[("handoff/SKILL.md", &skill_text("handoff", "body\n"))]);
-        write_manifest(&home, &format!("version = 1\n[sources.mp]\ngit = \"{}\"\n", upstream.path().display()));
+        write_manifest(
+            &home,
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\n",
+                upstream.path().display()
+            ),
+        );
 
         let report = run(&home.paths, None, true).unwrap();
 
         assert!(report.applied.is_none());
         assert!(!home.paths.current.exists());
-        assert!(Lock::read(&home.paths.lock).unwrap().skill("mp", "handoff").is_some());
+        assert!(
+            Lock::read(&home.paths.lock)
+                .unwrap()
+                .skill("mp", "handoff")
+                .is_some()
+        );
     }
 
     #[test]
     fn a_fetch_failure_leaves_the_lock_unchanged() {
         let home = home();
-        write_manifest(&home, "version = 1\n[sources.mp]\ngit = \"/nonexistent/repo.git\"\n");
+        write_manifest(
+            &home,
+            "version = 1\n[sources.mp]\ngit = \"/nonexistent/repo.git\"\n",
+        );
         write_lock(&home, "version = 1\n");
 
         let error = run(&home.paths, None, false).unwrap_err();
 
         assert!(matches!(error, Error::Git(_)));
-        assert_eq!(fs::read_to_string(&home.paths.lock).unwrap(), "version = 1\n");
+        assert_eq!(
+            fs::read_to_string(&home.paths.lock).unwrap(),
+            "version = 1\n"
+        );
     }
 
     #[test]
@@ -314,23 +383,40 @@ mod tests {
             ("handoff/SKILL.md", &skill_text("handoff", "one\n")),
             ("tdd/SKILL.md", &skill_text("tdd", "one\n")),
         ]);
-        write_manifest(&home, &format!("version = 1\n[sources.mp]\ngit = \"{}\"\n", upstream.path().display()));
+        write_manifest(
+            &home,
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\n",
+                upstream.path().display()
+            ),
+        );
         run(&home.paths, None, false).unwrap();
         let before = Lock::read(&home.paths.lock).unwrap();
 
-        git_commit(&upstream, &[
-            ("handoff/SKILL.md", "broken, no frontmatter\n"),
-            ("tdd/SKILL.md", &skill_text("tdd", "two\n")),
-        ]);
+        git_commit(
+            &upstream,
+            &[
+                ("handoff/SKILL.md", "broken, no frontmatter\n"),
+                ("tdd/SKILL.md", &skill_text("tdd", "two\n")),
+            ],
+        );
         let report = run(&home.paths, None, false).unwrap();
 
-        assert!(report.failures.iter().any(|failure| failure.starts_with("mp:handoff:")));
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.starts_with("mp:handoff:"))
+        );
         let after = Lock::read(&home.paths.lock).unwrap();
         assert_eq!(after.skill("mp", "handoff"), before.skill("mp", "handoff"));
         assert_ne!(after.skill("mp", "tdd"), before.skill("mp", "tdd"));
         assert!(home.paths.targets[0].join("mp:handoff").exists());
         assert_eq!(
-            fs::read_to_string(home.paths.targets[0].join("mp:tdd/SKILL.md")).unwrap().lines().last(),
+            fs::read_to_string(home.paths.targets[0].join("mp:tdd/SKILL.md"))
+                .unwrap()
+                .lines()
+                .last(),
             Some("two")
         );
     }
@@ -350,8 +436,18 @@ mod tests {
         let report = run(&home.paths, None, false).unwrap();
 
         assert!(report.applied.is_none());
-        assert!(report.failures.iter().any(|failure| failure.contains("mp:absent")));
-        assert!(Lock::read(&home.paths.lock).unwrap().skill("mp", "handoff").is_some());
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.contains("mp:absent"))
+        );
+        assert!(
+            Lock::read(&home.paths.lock)
+                .unwrap()
+                .skill("mp", "handoff")
+                .is_some()
+        );
     }
 
     #[test]
@@ -370,7 +466,10 @@ mod tests {
         run(&home.paths, None, false).unwrap();
         let before = Lock::read(&home.paths.lock).unwrap();
 
-        git_commit(&one, &[("handoff/SKILL.md", &skill_text("handoff", "two\n"))]);
+        git_commit(
+            &one,
+            &[("handoff/SKILL.md", &skill_text("handoff", "two\n"))],
+        );
         git_commit(&two, &[("tdd/SKILL.md", &skill_text("tdd", "two\n"))]);
         run(&home.paths, Some("mp"), false).unwrap();
 
@@ -392,7 +491,13 @@ mod tests {
         write_manifest(&home, &both);
         run(&home.paths, None, false).unwrap();
 
-        write_manifest(&home, &format!("version = 1\n[sources.mp]\ngit = \"{}\"\n", one.path().display()));
+        write_manifest(
+            &home,
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\n",
+                one.path().display()
+            ),
+        );
         run(&home.paths, None, false).unwrap();
 
         let lock = Lock::read(&home.paths.lock).unwrap();
@@ -404,7 +509,10 @@ mod tests {
     #[test]
     fn a_local_alias_cannot_be_updated() {
         let home = home();
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
         assert!(run(&home.paths, Some("me"), false).is_err());
     }
 
@@ -413,10 +521,16 @@ mod tests {
         let home = home();
         let upstream = git_origin(&[("handoff/SKILL.md", &skill_text("handoff", "one\n"))]);
         git_tag(&upstream, "v1");
-        git_commit(&upstream, &[("handoff/SKILL.md", &skill_text("handoff", "two\n"))]);
+        git_commit(
+            &upstream,
+            &[("handoff/SKILL.md", &skill_text("handoff", "two\n"))],
+        );
         write_manifest(
             &home,
-            &format!("version = 1\n[sources.mp]\ngit = \"{}\"\nref = \"v1\"\n", upstream.path().display()),
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\nref = \"v1\"\n",
+                upstream.path().display()
+            ),
         );
 
         run(&home.paths, None, false).unwrap();
@@ -426,7 +540,10 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(
-            fs::read_to_string(home.paths.targets[0].join("mp:handoff/SKILL.md")).unwrap().lines().last(),
+            fs::read_to_string(home.paths.targets[0].join("mp:handoff/SKILL.md"))
+                .unwrap()
+                .lines()
+                .last(),
             Some("one")
         );
     }

@@ -51,7 +51,11 @@ pub fn parse_index(json: &str) -> Result<Vec<IndexEntry>> {
                 entry.name
             )));
         }
-        entries.push(IndexEntry { name: entry.name, url, digest });
+        entries.push(IndexEntry {
+            name: entry.name,
+            url,
+            digest,
+        });
     }
     Ok(entries)
 }
@@ -69,7 +73,11 @@ pub fn archive_url(endpoint: &str, url: &str) -> String {
 }
 
 fn join(endpoint: &str, path: &str) -> String {
-    format!("{}/{}", endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+    format!(
+        "{}/{}",
+        endpoint.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
 }
 
 #[cfg(test)]
@@ -94,15 +102,24 @@ mod tests {
         let entries = parse_index(LIKEC4).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "likec4-dsl");
-        assert_eq!(entries[0].url, "/.well-known/agent-skills/likec4-dsl.tar.gz");
+        assert_eq!(
+            entries[0].url,
+            "/.well-known/agent-skills/likec4-dsl.tar.gz"
+        );
         assert!(entries[0].digest.starts_with("sha256:"));
     }
 
     #[test]
     fn builds_index_and_archive_urls() {
-        assert_eq!(index_url("https://likec4.dev/"), "https://likec4.dev/.well-known/agent-skills/index.json");
         assert_eq!(
-            archive_url("https://likec4.dev/", "/.well-known/agent-skills/likec4-dsl.tar.gz"),
+            index_url("https://likec4.dev/"),
+            "https://likec4.dev/.well-known/agent-skills/index.json"
+        );
+        assert_eq!(
+            archive_url(
+                "https://likec4.dev/",
+                "/.well-known/agent-skills/likec4-dsl.tar.gz"
+            ),
             "https://likec4.dev/.well-known/agent-skills/likec4-dsl.tar.gz"
         );
         assert_eq!(
@@ -119,14 +136,30 @@ mod tests {
 
     #[test]
     fn rejects_entries_without_a_usable_digest() {
-        let json = r#"{"skills":[{"name":"x","type":"archive","url":"/x.tar.gz","digest":"md5:aa"}]}"#;
-        assert!(parse_index(json).unwrap_err().to_string().contains("unusable digest"));
+        let json =
+            r#"{"skills":[{"name":"x","type":"archive","url":"/x.tar.gz","digest":"md5:aa"}]}"#;
+        assert!(
+            parse_index(json)
+                .unwrap_err()
+                .to_string()
+                .contains("unusable digest")
+        );
         let json = r#"{"skills":[{"name":"x","type":"archive","url":"/x.tar.gz"}]}"#;
-        assert!(parse_index(json).unwrap_err().to_string().contains("no url or digest"));
+        assert!(
+            parse_index(json)
+                .unwrap_err()
+                .to_string()
+                .contains("no url or digest")
+        );
     }
 
     #[test]
     fn rejects_malformed_json() {
-        assert!(parse_index("not json").unwrap_err().to_string().contains("malformed"));
+        assert!(
+            parse_index("not json")
+                .unwrap_err()
+                .to_string()
+                .contains("malformed")
+        );
     }
 }

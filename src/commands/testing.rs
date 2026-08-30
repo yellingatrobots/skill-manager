@@ -20,7 +20,10 @@ impl Home {
 
 pub fn home() -> Home {
     let temp = TempDir::new().unwrap();
-    Home { paths: Paths::rooted_at(temp.path()), temp }
+    Home {
+        paths: Paths::rooted_at(temp.path()),
+        temp,
+    }
 }
 
 pub fn write_skill(dir: &Path, name: &str, body: &str) {
@@ -87,7 +90,11 @@ fn git(dir: &Path, args: &[&str]) {
         .args(args)
         .output()
         .expect("git is available in tests");
-    assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// A real repository on disk, used as a git source URL.
@@ -107,7 +114,10 @@ pub fn git_commit(origin: &TempDir, files: &[(&str, &str)]) {
         fs::write(full, contents).unwrap();
     }
     git(origin.path(), &["add", "."]);
-    git(origin.path(), &["commit", "--quiet", "-m", "change", "--allow-empty"]);
+    git(
+        origin.path(),
+        &["commit", "--quiet", "-m", "change", "--allow-empty"],
+    );
 }
 
 pub fn git_tag(origin: &TempDir, tag: &str) {

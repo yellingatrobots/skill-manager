@@ -45,7 +45,10 @@ pub enum Error {
 
 impl Error {
     pub fn io(path: impl AsRef<Path>, source: std::io::Error) -> Self {
-        Error::Io { path: path.as_ref().to_path_buf(), source }
+        Error::Io {
+            path: path.as_ref().to_path_buf(),
+            source,
+        }
     }
 }
 

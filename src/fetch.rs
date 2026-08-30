@@ -22,8 +22,7 @@ pub struct Checkout {
 /// One archive skill on disk, unwrapped so its directory is named for the index.
 #[derive(Debug)]
 pub struct ArchiveSkill {
-    pub name: String,
-    /// The parent to walk: it contains exactly `name`.
+    /// The parent to walk: it contains exactly the index name.
     pub root: PathBuf,
     pub coordinate: String,
     /// The archive path recorded in the lock, so `hydrate` can refetch it.
@@ -55,7 +54,11 @@ pub fn checkout(source: &Source, git_ref: Option<&str>) -> Result<Checkout> {
     let root = temp.path().join("checkout");
     let wanted = git_ref.or(source.git_ref.as_deref());
     let commit = git::fetch_into(&url, wanted, &root)?;
-    Ok(Checkout { root, coordinate: git_coordinate(&commit), _temp: temp })
+    Ok(Checkout {
+        root,
+        coordinate: git_coordinate(&commit),
+        _temp: temp,
+    })
 }
 
 pub fn well_known_index(endpoint: &str) -> Result<Vec<IndexEntry>> {
@@ -72,19 +75,18 @@ pub fn archive_skill(
     let url = wellknown::archive_url(endpoint, url_path);
     let bytes = http::get(&url)?;
     let digest = tree::sha256(&bytes).to_string();
-    if let Some(expected) = expected_digest {
-        if digest != expected {
-            return Err(Error::Network(format!(
-                "{url}: archive digest {digest} does not match the locked {expected}"
-            )));
-        }
+    if let Some(expected) = expected_digest
+        && digest != expected
+    {
+        return Err(Error::Network(format!(
+            "{url}: archive digest {digest} does not match the locked {expected}"
+        )));
     }
 
     let temp = TempDir::new().at(std::env::temp_dir())?;
     let root = temp.path().join("source");
     install_archive(&bytes, name, &root)?;
     Ok(ArchiveSkill {
-        name: name.to_string(),
         root,
         coordinate: digest,
         url_path: url_path.to_string(),
@@ -117,7 +119,10 @@ pub fn install_archive(bytes: &[u8], name: &str, root: &Path) -> Result<()> {
 /// A local source is read straight from its working tree (ADR-0005).
 pub fn local_root(source: &Source) -> Result<PathBuf> {
     match &source.transport {
-        Transport::Path { resolved, configured } => {
+        Transport::Path {
+            resolved,
+            configured,
+        } => {
             if !resolved.is_dir() {
                 return Err(Error::Configuration(format!(
                     "source `{}`: {configured} is not a directory",
@@ -147,7 +152,9 @@ mod tests {
             header.set_size(contents.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
-            builder.append_data(&mut header, path, contents.as_bytes()).unwrap();
+            builder
+                .append_data(&mut header, path, contents.as_bytes())
+                .unwrap();
         }
         builder.into_inner().unwrap().finish().unwrap()
     }
@@ -157,11 +164,21 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path().join("source");
 
-        install_archive(&tar_gz(&[("dsl/SKILL.md", "body"), ("dsl/ref/a.md", "a")]), "likec4-dsl", &root)
-            .unwrap();
+        install_archive(
+            &tar_gz(&[("dsl/SKILL.md", "body"), ("dsl/ref/a.md", "a")]),
+            "likec4-dsl",
+            &root,
+        )
+        .unwrap();
 
-        assert_eq!(fs::read_to_string(root.join("likec4-dsl/SKILL.md")).unwrap(), "body");
-        assert_eq!(fs::read_to_string(root.join("likec4-dsl/ref/a.md")).unwrap(), "a");
+        assert_eq!(
+            fs::read_to_string(root.join("likec4-dsl/SKILL.md")).unwrap(),
+            "body"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("likec4-dsl/ref/a.md")).unwrap(),
+            "a"
+        );
         assert!(!root.join(".extracted").exists());
     }
 
@@ -170,10 +187,21 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path().join("source");
 
-        install_archive(&tar_gz(&[("SKILL.md", "body"), ("ref/a.md", "a")]), "likec4-dsl", &root).unwrap();
+        install_archive(
+            &tar_gz(&[("SKILL.md", "body"), ("ref/a.md", "a")]),
+            "likec4-dsl",
+            &root,
+        )
+        .unwrap();
 
-        assert_eq!(fs::read_to_string(root.join("likec4-dsl/SKILL.md")).unwrap(), "body");
-        assert_eq!(fs::read_to_string(root.join("likec4-dsl/ref/a.md")).unwrap(), "a");
+        assert_eq!(
+            fs::read_to_string(root.join("likec4-dsl/SKILL.md")).unwrap(),
+            "body"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("likec4-dsl/ref/a.md")).unwrap(),
+            "a"
+        );
         assert!(!root.join(".extracted").exists());
     }
 

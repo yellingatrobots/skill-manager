@@ -32,7 +32,12 @@ pub fn check_drift(manifest: &Manifest, lock: &Lock) -> Result<()> {
             source.git_ref.clone(),
             source.dir.clone(),
         );
-        let found = (locked.kind.clone(), locked.url.clone(), locked.git_ref.clone(), locked.dir.clone());
+        let found = (
+            locked.kind.clone(),
+            locked.url.clone(),
+            locked.git_ref.clone(),
+            locked.dir.clone(),
+        );
         if expected != found {
             return Err(drift(format!(
                 "source `{alias}` no longer matches its lock entry ({} {} ref={:?} dir={:?} locked as {} {} ref={:?} dir={:?})",
@@ -75,8 +80,9 @@ fn add_remote(source: &Source, lock: &Lock, store: &Store, plan: &mut Plan) -> R
         if !source.selects(name) {
             continue;
         }
-        let digest = Digest::parse(&entry.digest)
-            .ok_or_else(|| Error::Lock(format!("`{}:{name}` has an unusable digest", source.alias)))?;
+        let digest = Digest::parse(&entry.digest).ok_or_else(|| {
+            Error::Lock(format!("`{}:{name}` has an unusable digest", source.alias))
+        })?;
         let tree = store.tree(&digest)?;
         match read_doc(&tree) {
             Ok(doc) => plan.deployables.push(Deployable {
@@ -88,7 +94,9 @@ fn add_remote(source: &Source, lock: &Lock, store: &Store, plan: &mut Plan) -> R
                 upstream_url: locked.url.clone(),
                 upstream_coordinate: entry.coordinate.clone(),
             }),
-            Err(reason) => plan.failures.push(format!("{}:{name}: {reason}", source.alias)),
+            Err(reason) => plan
+                .failures
+                .push(format!("{}:{name}: {reason}", source.alias)),
         }
     }
     Ok(())
@@ -99,7 +107,10 @@ fn add_local(source: &Source, plan: &mut Plan) -> Result<()> {
     let discovery = skill::discover(&root, source.dir.as_deref())?;
     for invalid in &discovery.invalid {
         if source.selects(&invalid.name) {
-            plan.failures.push(format!("{}:{}: {}", source.alias, invalid.name, invalid.reason));
+            plan.failures.push(format!(
+                "{}:{}: {}",
+                source.alias, invalid.name, invalid.reason
+            ));
         }
     }
 
@@ -122,8 +133,11 @@ fn add_local(source: &Source, plan: &mut Plan) -> Result<()> {
     }
 
     for missing in source.skills.iter().flatten() {
-        if !selected_names.iter().any(|name| *name == missing)
-            && !discovery.invalid.iter().any(|invalid| &invalid.name == missing)
+        if !selected_names.contains(&missing)
+            && !discovery
+                .invalid
+                .iter()
+                .any(|invalid| &invalid.name == missing)
         {
             plan.failures.push(format!(
                 "{}:{missing}: not found in {}",

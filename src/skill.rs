@@ -22,7 +22,6 @@ pub struct Skill {
 #[derive(Debug, Clone)]
 pub struct InvalidSkill {
     pub name: String,
-    pub path: PathBuf,
     pub reason: String,
 }
 
@@ -38,6 +37,7 @@ impl Discovery {
         self.skills.iter().find(|skill| skill.name == name)
     }
 
+    #[cfg(test)]
     pub fn names(&self) -> Vec<String> {
         self.skills.iter().map(|skill| skill.name.clone()).collect()
     }
@@ -72,9 +72,9 @@ fn walk(dir: &Path, discovery: &mut Discovery) -> Result<()> {
         let entry = entry.at(dir)?;
         let path = entry.path();
         let metadata = fs::symlink_metadata(&path).at(&path)?;
-        let hidden = path.file_name().is_some_and(|name| {
-            name.to_string_lossy().starts_with('.')
-        });
+        let hidden = path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with('.'));
         if !metadata.is_dir() || hidden {
             continue;
         }
@@ -99,9 +99,7 @@ fn collect_skill(path: &Path, discovery: &mut Discovery) {
 
     match read_skill(&name, path) {
         Ok(skill) => discovery.skills.push(skill),
-        Err(reason) => {
-            discovery.invalid.push(InvalidSkill { name, path: path.to_path_buf(), reason })
-        }
+        Err(reason) => discovery.invalid.push(InvalidSkill { name, reason }),
     }
 }
 

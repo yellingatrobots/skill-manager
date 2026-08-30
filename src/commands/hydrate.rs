@@ -3,7 +3,7 @@
 use crate::error::{Error, Failures, Result};
 use crate::fetch;
 use crate::git;
-use crate::lock::{self, Lock, LockedSkill, LockedSource};
+use crate::lock::{self, LockedSkill, LockedSource};
 use crate::paths::Paths;
 use crate::store::Store;
 use crate::tree::{Digest, Tree};
@@ -47,7 +47,9 @@ fn missing_skills<'a>(
     let mut missing = Vec::new();
     for (name, skill) in &source.skills {
         match Digest::parse(&skill.digest) {
-            None => report.failures.push(format!("{name}: unusable digest `{}`", skill.digest)),
+            None => report
+                .failures
+                .push(format!("{name}: unusable digest `{}`", skill.digest)),
             Some(digest) if !store.contains(&digest) => missing.push((name, skill, digest)),
             Some(_) => {}
         }
@@ -65,15 +67,21 @@ fn hydrate_git(
     // Skills may sit at different commits, so one checkout per coordinate.
     let mut by_coordinate: BTreeMap<&str, Vec<&(&String, &LockedSkill, Digest)>> = BTreeMap::new();
     for entry in missing {
-        by_coordinate.entry(entry.1.coordinate.as_str()).or_default().push(entry);
+        by_coordinate
+            .entry(entry.1.coordinate.as_str())
+            .or_default()
+            .push(entry);
     }
 
     for (coordinate, entries) in by_coordinate {
         let Some(commit) = fetch::commit_of(coordinate) else {
-            report.failures.push(format!("{alias}: unusable coordinate `{coordinate}`"));
+            report
+                .failures
+                .push(format!("{alias}: unusable coordinate `{coordinate}`"));
             continue;
         };
-        let temp = tempfile::TempDir::new().map_err(|error| Error::io(std::env::temp_dir(), error))?;
+        let temp =
+            tempfile::TempDir::new().map_err(|error| Error::io(std::env::temp_dir(), error))?;
         let checkout = temp.path().join("checkout");
         match git::fetch_into(&source.url, Some(commit), &checkout) {
             Err(error) => report.failures.push(format!("{alias}: {error}")),
@@ -99,8 +107,7 @@ fn hydrate_archives(
     report: &mut HydrateReport,
 ) -> Result<()> {
     for (name, skill, digest) in missing {
-        let fetched =
-            fetch::archive_skill(&source.url, name, &skill.path, Some(&skill.coordinate));
+        let fetched = fetch::archive_skill(&source.url, name, &skill.path, Some(&skill.coordinate));
         match fetched {
             Err(error) => report.failures.push(format!("{alias}:{name}: {error}")),
             Ok(fetched) => {
@@ -134,8 +141,8 @@ fn store_verified(path: &Path, expected: &Digest, store: &Store) -> Result<()> {
     Ok(())
 }
 
-/// Re-exported for `verify`, which needs the same lock shape.
-pub fn locked_digests(lock: &Lock) -> Vec<(String, Digest)> {
+#[cfg(test)]
+fn locked_digests(lock: &crate::lock::Lock) -> Vec<(String, Digest)> {
     let mut digests = Vec::new();
     for (alias, source) in &lock.sources {
         for (name, skill) in &source.skills {
@@ -153,6 +160,7 @@ mod tests {
     use crate::commands::testing::*;
     use crate::commands::update;
     use crate::fsx;
+    use crate::lock::Lock;
     use std::fs;
 
     fn locked_home() -> (Home, tempfile::TempDir) {
@@ -161,7 +169,13 @@ mod tests {
             ("handoff/SKILL.md", &skill_text("handoff", "one\n")),
             ("tdd/SKILL.md", &skill_text("tdd", "one\n")),
         ]);
-        write_manifest(&home, &format!("version = 1\n[sources.mp]\ngit = \"{}\"\n", upstream.path().display()));
+        write_manifest(
+            &home,
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\n",
+                upstream.path().display()
+            ),
+        );
         update::run(&home.paths, None, true).unwrap();
         (home, upstream)
     }
@@ -210,15 +224,31 @@ mod tests {
         let wrong = format!("digest = \"sha256:{}\"", "0".repeat(64));
         let doctored: String = lock
             .lines()
-            .map(|line| if line.starts_with("digest = ") { wrong.as_str() } else { line })
+            .map(|line| {
+                if line.starts_with("digest = ") {
+                    wrong.as_str()
+                } else {
+                    line
+                }
+            })
             .collect::<Vec<_>>()
             .join("\n");
         write_lock(&home, &doctored);
 
         let report = run(&home.paths).unwrap();
 
-        assert!(report.failures.iter().any(|failure| failure.contains("does not match the locked")));
-        assert!(report.failures.iter().any(|failure| failure.contains("skill-manager update")));
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.contains("does not match the locked"))
+        );
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.contains("skill-manager update"))
+        );
     }
 
     #[test]
@@ -226,12 +256,20 @@ mod tests {
         let (home, _upstream) = locked_home();
         fsx::remove_tree(&home.paths.store).unwrap();
         let lock = fs::read_to_string(&home.paths.lock).unwrap();
-        write_lock(&home, &lock.replace("path = \"handoff\"", "path = \"absent\""));
+        write_lock(
+            &home,
+            &lock.replace("path = \"handoff\"", "path = \"absent\""),
+        );
 
         let report = run(&home.paths).unwrap();
 
         assert_eq!(report.added, ["mp:tdd"]);
-        assert!(report.failures.iter().any(|failure| failure.contains("mp:handoff")));
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.contains("mp:handoff"))
+        );
     }
 
     #[test]

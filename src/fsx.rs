@@ -11,7 +11,9 @@ pub fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
     fs::create_dir_all(parent).at(parent)?;
     let temporary = tempfile::NamedTempFile::new_in(parent).at(parent)?;
     fs::write(temporary.path(), contents).at(temporary.path())?;
-    temporary.persist(path).map_err(|error| crate::error::Error::io(path, error.error))?;
+    temporary
+        .persist(path)
+        .map_err(|error| crate::error::Error::io(path, error.error))?;
     Ok(())
 }
 

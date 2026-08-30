@@ -58,8 +58,15 @@ mod tests {
     #[test]
     fn deploys_a_local_source_into_every_target() {
         let home = home();
-        write_skill(&home.path().join("etc/ai/skills/codemode"), "codemode", "principles\n");
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_skill(
+            &home.path().join("etc/ai/skills/codemode"),
+            "codemode",
+            "principles\n",
+        );
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
 
         let report = run(&home.paths).unwrap();
 
@@ -70,7 +77,10 @@ mod tests {
         assert!(text.contains("name: me:codemode\n"));
         assert!(text.contains("source_alias: me\n"));
         assert!(text.contains("upstream_name: codemode\n"));
-        assert!(text.contains(&format!("upstream_url: {}/etc/ai/skills\n", home.path().display())));
+        assert!(text.contains(&format!(
+            "upstream_url: {}/etc/ai/skills\n",
+            home.path().display()
+        )));
         assert!(text.contains("upstream_coordinate: sha256:"));
     }
 
@@ -81,12 +91,20 @@ mod tests {
         let bad = home.path().join("etc/ai/skills/bad");
         fs::create_dir_all(&bad).unwrap();
         fs::write(bad.join("SKILL.md"), "no frontmatter\n").unwrap();
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
 
         let report = run(&home.paths).unwrap();
 
         assert_eq!(report.deployed, ["me:good"]);
-        assert!(report.failures.iter().any(|failure| failure.starts_with("me:bad:")));
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.starts_with("me:bad:"))
+        );
     }
 
     #[test]
@@ -101,15 +119,32 @@ mod tests {
         let report = run(&home.paths).unwrap();
 
         assert_eq!(report.deployed, ["me:good"]);
-        assert!(report.failures.iter().any(|failure| failure.contains("me:absent")));
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.contains("me:absent"))
+        );
     }
 
     #[test]
     fn deploys_a_remote_skill_from_the_lock_and_store() {
         let home = home();
         let digest = store_skill(&home, "handoff", "hand off work\n");
-        write_manifest(&home, "version = 1\n[sources.mp]\ngithub = \"mattpocock/skills\"\nref = \"main\"\n");
-        write_lock(&home, &lock_toml("mp", "github", "https://github.com/mattpocock/skills.git", Some("main"), &[("handoff", "skills/handoff", "git:abc123", &digest)]));
+        write_manifest(
+            &home,
+            "version = 1\n[sources.mp]\ngithub = \"mattpocock/skills\"\nref = \"main\"\n",
+        );
+        write_lock(
+            &home,
+            &lock_toml(
+                "mp",
+                "github",
+                "https://github.com/mattpocock/skills.git",
+                Some("main"),
+                &[("handoff", "skills/handoff", "git:abc123", &digest)],
+            ),
+        );
 
         let report = run(&home.paths).unwrap();
 
@@ -125,8 +160,20 @@ mod tests {
     fn aborts_when_the_manifest_no_longer_matches_the_lock() {
         let home = home();
         let digest = store_skill(&home, "handoff", "body\n");
-        write_manifest(&home, "version = 1\n[sources.mp]\ngithub = \"mattpocock/skills\"\nref = \"next\"\n");
-        write_lock(&home, &lock_toml("mp", "github", "https://github.com/mattpocock/skills.git", Some("main"), &[("handoff", "skills/handoff", "git:abc", &digest)]));
+        write_manifest(
+            &home,
+            "version = 1\n[sources.mp]\ngithub = \"mattpocock/skills\"\nref = \"next\"\n",
+        );
+        write_lock(
+            &home,
+            &lock_toml(
+                "mp",
+                "github",
+                "https://github.com/mattpocock/skills.git",
+                Some("main"),
+                &[("handoff", "skills/handoff", "git:abc", &digest)],
+            ),
+        );
 
         let error = run(&home.paths).unwrap_err().to_string();
 
@@ -141,7 +188,16 @@ mod tests {
             &home,
             "version = 1\n[sources.mp]\ngithub = \"mattpocock/skills\"\nskills = [\"handoff\", \"tdd\"]\n",
         );
-        write_lock(&home, &lock_toml("mp", "github", "https://github.com/mattpocock/skills.git", None, &[("handoff", "skills/handoff", "git:abc", &digest)]));
+        write_lock(
+            &home,
+            &lock_toml(
+                "mp",
+                "github",
+                "https://github.com/mattpocock/skills.git",
+                None,
+                &[("handoff", "skills/handoff", "git:abc", &digest)],
+            ),
+        );
 
         let error = run(&home.paths).unwrap_err().to_string();
 
@@ -157,10 +213,19 @@ mod tests {
             &home,
             "version = 1\n[sources.mp]\ngithub = \"mattpocock/skills\"\nskills = [\"handoff\"]\n",
         );
-        write_lock(&home, &lock_toml("mp", "github", "https://github.com/mattpocock/skills.git", None, &[
-            ("handoff", "skills/handoff", "git:abc", &digest),
-            ("retired", "skills/retired", "git:abc", &digest),
-        ]));
+        write_lock(
+            &home,
+            &lock_toml(
+                "mp",
+                "github",
+                "https://github.com/mattpocock/skills.git",
+                None,
+                &[
+                    ("handoff", "skills/handoff", "git:abc", &digest),
+                    ("retired", "skills/retired", "git:abc", &digest),
+                ],
+            ),
+        );
 
         let report = run(&home.paths).unwrap();
 
@@ -171,8 +236,20 @@ mod tests {
     fn fails_loudly_when_the_store_entry_is_missing() {
         let home = home();
         let absent = format!("sha256:{}", "b".repeat(64));
-        write_manifest(&home, "version = 1\n[sources.mp]\ngithub = \"mattpocock/skills\"\n");
-        write_lock(&home, &lock_toml("mp", "github", "https://github.com/mattpocock/skills.git", None, &[("handoff", "skills/handoff", "git:abc", &absent)]));
+        write_manifest(
+            &home,
+            "version = 1\n[sources.mp]\ngithub = \"mattpocock/skills\"\n",
+        );
+        write_lock(
+            &home,
+            &lock_toml(
+                "mp",
+                "github",
+                "https://github.com/mattpocock/skills.git",
+                None,
+                &[("handoff", "skills/handoff", "git:abc", &absent)],
+            ),
+        );
 
         let error = run(&home.paths).unwrap_err().to_string();
 
@@ -182,8 +259,15 @@ mod tests {
     #[test]
     fn re_running_changes_nothing() {
         let home = home();
-        write_skill(&home.path().join("etc/ai/skills/codemode"), "codemode", "body\n");
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_skill(
+            &home.path().join("etc/ai/skills/codemode"),
+            "codemode",
+            "body\n",
+        );
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
 
         let first = run(&home.paths).unwrap();
         let second = run(&home.paths).unwrap();

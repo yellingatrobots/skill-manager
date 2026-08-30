@@ -53,8 +53,10 @@ pub fn skill_root(dest: &Path) -> Result<PathBuf> {
     if dest.join(crate::skill::SKILL_FILE).is_file() {
         return Ok(dest.to_path_buf());
     }
-    let mut entries: Vec<PathBuf> =
-        fs::read_dir(dest).at(dest)?.map(|entry| entry.at(dest).map(|e| e.path())).collect::<Result<_>>()?;
+    let mut entries: Vec<PathBuf> = fs::read_dir(dest)
+        .at(dest)?
+        .map(|entry| entry.at(dest).map(|e| e.path()))
+        .collect::<Result<_>>()?;
     entries.retain(|entry| entry.is_dir());
     match entries.as_slice() {
         [only] if only.join(crate::skill::SKILL_FILE).is_file() => Ok(only.clone()),
@@ -64,7 +66,10 @@ pub fn skill_root(dest: &Path) -> Result<PathBuf> {
 
 fn safe_relative_path(path: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
-        return Err(Error::Archive(format!("{}: absolute archive path", path.display())));
+        return Err(Error::Archive(format!(
+            "{}: absolute archive path",
+            path.display()
+        )));
     }
     let mut relative = PathBuf::new();
     for component in path.components() {
@@ -78,12 +83,17 @@ fn safe_relative_path(path: &Path) -> Result<PathBuf> {
                 )));
             }
             Component::RootDir | Component::Prefix(_) => {
-                return Err(Error::Archive(format!("{}: absolute archive path", path.display())));
+                return Err(Error::Archive(format!(
+                    "{}: absolute archive path",
+                    path.display()
+                )));
             }
         }
     }
     if relative.as_os_str().is_empty() {
-        return Err(Error::Archive("archive entry has an empty path".to_string()));
+        return Err(Error::Archive(
+            "archive entry has an empty path".to_string(),
+        ));
     }
     Ok(relative)
 }
@@ -102,7 +112,9 @@ mod tests {
             header.set_size(contents.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
-            builder.append_data(&mut header, path, contents.as_bytes()).unwrap();
+            builder
+                .append_data(&mut header, path, contents.as_bytes())
+                .unwrap();
         }
         builder.into_inner().unwrap().finish().unwrap()
     }
@@ -134,9 +146,19 @@ mod tests {
     #[test]
     fn extracts_files_and_directories() {
         let dir = TempDir::new().unwrap();
-        extract_tar_gz(&tar_gz(&[("SKILL.md", "body"), ("ref/one.md", "one")]), dir.path()).unwrap();
-        assert_eq!(fs::read_to_string(dir.path().join("SKILL.md")).unwrap(), "body");
-        assert_eq!(fs::read_to_string(dir.path().join("ref/one.md")).unwrap(), "one");
+        extract_tar_gz(
+            &tar_gz(&[("SKILL.md", "body"), ("ref/one.md", "one")]),
+            dir.path(),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SKILL.md")).unwrap(),
+            "body"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("ref/one.md")).unwrap(),
+            "one"
+        );
     }
 
     #[test]
@@ -157,7 +179,8 @@ mod tests {
     #[test]
     fn rejects_links() {
         let dir = TempDir::new().unwrap();
-        let error = extract_tar_gz(&tar_gz_with_link("link.md", "/etc/passwd"), dir.path()).unwrap_err();
+        let error =
+            extract_tar_gz(&tar_gz_with_link("link.md", "/etc/passwd"), dir.path()).unwrap_err();
         assert!(error.to_string().contains("regular files"));
     }
 
@@ -165,13 +188,20 @@ mod tests {
     fn skill_root_unwraps_a_single_wrapping_directory() {
         let dir = TempDir::new().unwrap();
         extract_tar_gz(&tar_gz(&[("likec4-dsl/SKILL.md", "body")]), dir.path()).unwrap();
-        assert_eq!(skill_root(dir.path()).unwrap(), dir.path().join("likec4-dsl"));
+        assert_eq!(
+            skill_root(dir.path()).unwrap(),
+            dir.path().join("likec4-dsl")
+        );
     }
 
     #[test]
     fn skill_root_keeps_a_root_that_is_already_the_skill() {
         let dir = TempDir::new().unwrap();
-        extract_tar_gz(&tar_gz(&[("SKILL.md", "body"), ("ref/one.md", "one")]), dir.path()).unwrap();
+        extract_tar_gz(
+            &tar_gz(&[("SKILL.md", "body"), ("ref/one.md", "one")]),
+            dir.path(),
+        )
+        .unwrap();
         assert_eq!(skill_root(dir.path()).unwrap(), dir.path());
     }
 }

@@ -48,15 +48,17 @@ struct RawLock {
 
 impl Lock {
     pub fn parse(text: &str) -> Result<Self> {
-        let raw: RawLock = toml::from_str(text)
-            .map_err(|error| Error::Lock(error.message().to_string()))?;
+        let raw: RawLock =
+            toml::from_str(text).map_err(|error| Error::Lock(error.message().to_string()))?;
         if raw.version != LOCK_VERSION {
             return Err(Error::Lock(format!(
                 "unsupported lock version {}; expected {LOCK_VERSION}",
                 raw.version
             )));
         }
-        Ok(Lock { sources: raw.sources })
+        Ok(Lock {
+            sources: raw.sources,
+        })
     }
 
     /// An absent lock file is an empty lock; a malformed one is an error.
@@ -121,8 +123,14 @@ fn string(value: &str) -> String {
 /// TOML bare keys are unquoted; anything else is quoted.
 fn key(value: &str) -> String {
     let bare = !value.is_empty()
-        && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    if bare { value.to_string() } else { string(value) }
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if bare {
+        value.to_string()
+    } else {
+        string(value)
+    }
 }
 
 /// Reads a lock, or fails with the actionable message the commands share.
@@ -195,10 +203,12 @@ mod tests {
         let mut a = Lock::default();
         let mut b = Lock::default();
         for alias in ["zz", "aa"] {
-            a.sources.insert(alias.into(), sample().sources["mp"].clone());
+            a.sources
+                .insert(alias.into(), sample().sources["mp"].clone());
         }
         for alias in ["aa", "zz"] {
-            b.sources.insert(alias.into(), sample().sources["mp"].clone());
+            b.sources
+                .insert(alias.into(), sample().sources["mp"].clone());
         }
         assert_eq!(a.render(), b.render());
         assert!(a.render().find("[sources.aa]") < a.render().find("[sources.zz]"));
@@ -223,19 +233,27 @@ mod tests {
     #[test]
     fn rejects_unsupported_versions_and_unknown_keys() {
         assert!(Lock::parse("version = 2\n").is_err());
-        assert!(Lock::parse("version = 1\n[sources.mp]\nkind = \"git\"\nurl = \"u\"\nnope = 1\n").is_err());
+        assert!(
+            Lock::parse("version = 1\n[sources.mp]\nkind = \"git\"\nurl = \"u\"\nnope = 1\n")
+                .is_err()
+        );
     }
 
     #[test]
     fn a_missing_lock_file_reads_as_empty() {
         let dir = tempfile::TempDir::new().unwrap();
-        assert_eq!(Lock::read(&dir.path().join("skills.lock")).unwrap(), Lock::default());
+        assert_eq!(
+            Lock::read(&dir.path().join("skills.lock")).unwrap(),
+            Lock::default()
+        );
     }
 
     #[test]
     fn read_required_points_at_update() {
         let dir = tempfile::TempDir::new().unwrap();
-        let error = read_required(&dir.path().join("skills.lock")).unwrap_err().to_string();
+        let error = read_required(&dir.path().join("skills.lock"))
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("skill-manager update"));
     }
 }

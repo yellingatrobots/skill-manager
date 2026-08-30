@@ -11,7 +11,12 @@ pub fn fetch_into(url: &str, git_ref: Option<&str>, dest: &Path) -> Result<Strin
     run(dest, &["remote", "add", "origin", url])?;
 
     let wanted = git_ref.unwrap_or("HEAD");
-    if run(dest, &["fetch", "--quiet", "--depth", "1", "origin", wanted]).is_err() {
+    if run(
+        dest,
+        &["fetch", "--quiet", "--depth", "1", "origin", wanted],
+    )
+    .is_err()
+    {
         // Servers that refuse a shallow fetch of a bare commit still serve everything.
         run(dest, &["fetch", "--quiet", "origin"])
             .map_err(|error| Error::Git(format!("{url}: cannot fetch `{wanted}`: {error}")))?;
@@ -27,13 +32,20 @@ pub fn fetch_into(url: &str, git_ref: Option<&str>, dest: &Path) -> Result<Strin
 }
 
 fn run(dir: &Path, args: &[&str]) -> Result<String> {
-    let output = Command::new("git").arg("-C").arg(dir).args(args).output().map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            Error::Git("`git` was not found on PATH; it is required for git and github sources".into())
-        } else {
-            Error::Git(format!("git {}: {error}", args.join(" ")))
-        }
-    })?;
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                Error::Git(
+                    "`git` was not found on PATH; it is required for git and github sources".into(),
+                )
+            } else {
+                Error::Git(format!("git {}: {error}", args.join(" ")))
+            }
+        })?;
     if !output.status.success() {
         return Err(Error::Git(format!(
             "git {} failed: {}",
@@ -67,7 +79,10 @@ mod tests {
 
     #[test]
     fn fetches_the_default_branch_and_reports_the_commit() {
-        let upstream = origin(&[("skills/handoff/SKILL.md", "---\nname: handoff\ndescription: d\n---\n")]);
+        let upstream = origin(&[(
+            "skills/handoff/SKILL.md",
+            "---\nname: handoff\ndescription: d\n---\n",
+        )]);
         let dest = TempDir::new().unwrap();
         let checkout = dest.path().join("checkout");
 
@@ -99,22 +114,32 @@ mod tests {
 
         fetch_into(upstream.path().to_str().unwrap(), Some("v1"), &checkout).unwrap();
 
-        assert_eq!(fs::read_to_string(checkout.join("SKILL.md")).unwrap(), "one");
+        assert_eq!(
+            fs::read_to_string(checkout.join("SKILL.md")).unwrap(),
+            "one"
+        );
     }
 
     #[test]
     fn fetches_a_pinned_commit() {
         let upstream = origin(&[("SKILL.md", "one")]);
-        let first = run(upstream.path(), &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        let first = run(upstream.path(), &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_string();
         fs::write(upstream.path().join("SKILL.md"), "two").unwrap();
         run(upstream.path(), &["commit", "--quiet", "-am", "second"]).unwrap();
         let dest = TempDir::new().unwrap();
         let checkout = dest.path().join("checkout");
 
-        let resolved = fetch_into(upstream.path().to_str().unwrap(), Some(&first), &checkout).unwrap();
+        let resolved =
+            fetch_into(upstream.path().to_str().unwrap(), Some(&first), &checkout).unwrap();
 
         assert_eq!(resolved, first);
-        assert_eq!(fs::read_to_string(checkout.join("SKILL.md")).unwrap(), "one");
+        assert_eq!(
+            fs::read_to_string(checkout.join("SKILL.md")).unwrap(),
+            "one"
+        );
     }
 
     #[test]
@@ -122,8 +147,12 @@ mod tests {
         let upstream = origin(&[("SKILL.md", "one")]);
         let dest = TempDir::new().unwrap();
 
-        let error = fetch_into(upstream.path().to_str().unwrap(), Some("nope"), &dest.path().join("c"))
-            .unwrap_err();
+        let error = fetch_into(
+            upstream.path().to_str().unwrap(),
+            Some("nope"),
+            &dest.path().join("c"),
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("nope"));
     }

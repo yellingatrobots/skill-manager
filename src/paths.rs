@@ -38,11 +38,15 @@ impl Paths {
             deployed: deployed.clone(),
             generations: deployed.join("generations"),
             current: deployed.join("current"),
-            targets: TARGET_DIRECTORIES.iter().map(|target| home.join(target)).collect(),
+            targets: TARGET_DIRECTORIES
+                .iter()
+                .map(|target| home.join(target))
+                .collect(),
         }
     }
 
-    /// Everything under one root, for tests and for `--root`-style isolation.
+    /// Everything under one root.
+    #[cfg(test)]
     pub fn rooted_at(root: &Path) -> Self {
         Paths::new(root, &root.join(".local/share"))
     }
@@ -61,12 +65,24 @@ mod tests {
         let paths = Paths::new(Path::new("/home/t"), Path::new("/home/t/.local/share"));
         assert_eq!(paths.manifest, Path::new("/home/t/etc/ai/skills.toml"));
         assert_eq!(paths.lock, Path::new("/home/t/etc/ai/skills.lock"));
-        assert_eq!(paths.store, Path::new("/home/t/.local/share/skill-manager/store"));
-        assert_eq!(paths.current, Path::new("/home/t/.local/share/skill-manager/deployed/current"));
-        assert_eq!(paths.deployed, Path::new("/home/t/.local/share/skill-manager/deployed"));
+        assert_eq!(
+            paths.store,
+            Path::new("/home/t/.local/share/skill-manager/store")
+        );
+        assert_eq!(
+            paths.current,
+            Path::new("/home/t/.local/share/skill-manager/deployed/current")
+        );
+        assert_eq!(
+            paths.deployed,
+            Path::new("/home/t/.local/share/skill-manager/deployed")
+        );
         assert_eq!(
             paths.targets,
-            [Path::new("/home/t/.claude/skills"), Path::new("/home/t/.agents/skills")]
+            [
+                Path::new("/home/t/.claude/skills"),
+                Path::new("/home/t/.agents/skills")
+            ]
         );
     }
 

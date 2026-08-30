@@ -48,11 +48,16 @@ fn tidy_after_removal(array: &mut Array, removed: usize) {
 }
 
 fn parse(text: &str) -> Result<DocumentMut> {
-    text.parse::<DocumentMut>().map_err(|error| Error::Manifest(error.to_string()))
+    text.parse::<DocumentMut>()
+        .map_err(|error| Error::Manifest(error.to_string()))
 }
 
 fn skills_array<'a>(document: &'a DocumentMut, alias: &str) -> Option<&'a Array> {
-    document.get("sources")?.get(alias)?.get("skills")?.as_array()
+    document
+        .get("sources")?
+        .get(alias)?
+        .get("skills")?
+        .as_array()
 }
 
 fn skills_array_mut<'a>(document: &'a mut DocumentMut, alias: &str) -> Result<&'a mut Array> {
@@ -73,7 +78,9 @@ fn skills_array_mut<'a>(document: &'a mut DocumentMut, alias: &str) -> Result<&'
 
     match skills {
         Item::Value(Value::Array(array)) => Ok(array),
-        _ => Err(Error::Manifest(format!("source `{alias}` has a `skills` that is not an array"))),
+        _ => Err(Error::Manifest(format!(
+            "source `{alias}` has a `skills` that is not an array"
+        ))),
     }
 }
 
@@ -131,20 +138,38 @@ path = "~/etc/ai/skills"
 
     #[test]
     fn removing_an_absent_selection_changes_nothing() {
-        assert_eq!(remove_skill(MANIFEST, "mp", "absent").unwrap(), Edit::Unchanged);
+        assert_eq!(
+            remove_skill(MANIFEST, "mp", "absent").unwrap(),
+            Edit::Unchanged
+        );
     }
 
     #[test]
     fn a_source_without_skills_selects_everything() {
         assert!(selects_all(MANIFEST, "me").unwrap());
         assert!(!selects_all(MANIFEST, "mp").unwrap());
-        assert!(add_skill(MANIFEST, "me", "x").unwrap_err().to_string().contains("every skill"));
-        assert!(remove_skill(MANIFEST, "me", "x").unwrap_err().to_string().contains("every skill"));
+        assert!(
+            add_skill(MANIFEST, "me", "x")
+                .unwrap_err()
+                .to_string()
+                .contains("every skill")
+        );
+        assert!(
+            remove_skill(MANIFEST, "me", "x")
+                .unwrap_err()
+                .to_string()
+                .contains("every skill")
+        );
     }
 
     #[test]
     fn an_unknown_alias_is_an_error() {
-        assert!(add_skill(MANIFEST, "nope", "x").unwrap_err().to_string().contains("no source"));
+        assert!(
+            add_skill(MANIFEST, "nope", "x")
+                .unwrap_err()
+                .to_string()
+                .contains("no source")
+        );
     }
 
     #[test]

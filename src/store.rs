@@ -4,7 +4,7 @@ use crate::error::{Error, IoContext, Result};
 use crate::fsx;
 use crate::tree::{Digest, Tree};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct Store {
@@ -60,7 +60,8 @@ impl Store {
         Ok(&self.tree(digest)?.digest()? == digest)
     }
 
-    pub fn root(&self) -> &Path {
+    #[cfg(test)]
+    pub fn root(&self) -> &std::path::Path {
         &self.root
     }
 }
@@ -87,7 +88,11 @@ mod tests {
 
         assert_eq!(digest, tree.digest().unwrap());
         assert!(store.contains(&digest));
-        assert!(store.path_for(&digest).starts_with(home.path().join("store/sha256")));
+        assert!(
+            store
+                .path_for(&digest)
+                .starts_with(home.path().join("store/sha256"))
+        );
         assert_eq!(
             fs::read_to_string(store.path_for(&digest).join("SKILL.md")).unwrap(),
             "body"
@@ -116,7 +121,10 @@ mod tests {
         let second = store.insert(&tree).unwrap();
 
         assert_eq!(first, second);
-        assert_eq!(fs::read_dir(store.root().join("sha256")).unwrap().count(), 1);
+        assert_eq!(
+            fs::read_dir(store.root().join("sha256")).unwrap().count(),
+            1
+        );
     }
 
     #[test]
@@ -130,7 +138,10 @@ mod tests {
         let b = store.insert(&Tree::read(two.path()).unwrap()).unwrap();
 
         assert_ne!(a, b);
-        assert_eq!(fs::read_dir(store.root().join("sha256")).unwrap().count(), 2);
+        assert_eq!(
+            fs::read_dir(store.root().join("sha256")).unwrap().count(),
+            2
+        );
     }
 
     #[test]
@@ -153,7 +164,10 @@ mod tests {
         let digest = Digest::parse(&format!("sha256:{}", "a".repeat(64))).unwrap();
 
         assert!(!store.contains(&digest));
-        assert!(matches!(store.tree(&digest), Err(Error::MissingStoreEntry(_))));
+        assert!(matches!(
+            store.tree(&digest),
+            Err(Error::MissingStoreEntry(_))
+        ));
     }
 
     #[test]

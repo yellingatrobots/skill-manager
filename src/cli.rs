@@ -103,7 +103,10 @@ pub fn run(cli: Cli) -> Result<i32> {
         Command::Info { name, json } => {
             let records = info::run(&paths, name.as_deref())?;
             if json {
-                println!("{}", serde_json::to_string_pretty(&records).expect("records serialize"));
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&records).expect("records serialize")
+                );
             } else if name.is_some() {
                 for record in &records {
                     print!("{}", info::render_detail(record));
@@ -127,8 +130,16 @@ pub fn run(cli: Cli) -> Result<i32> {
 }
 
 fn print_apply(report: &apply::ApplyReport) {
-    let state = if report.switched { "deployed" } else { "unchanged" };
-    println!("{state} {} skill(s) at generation {}", report.deployed.len(), report.generation);
+    let state = if report.switched {
+        "deployed"
+    } else {
+        "unchanged"
+    };
+    println!(
+        "{state} {} skill(s) at generation {}",
+        report.deployed.len(),
+        report.generation
+    );
     for target in &report.targets {
         if !target.linked.is_empty() || !target.removed.is_empty() {
             println!(
@@ -163,7 +174,11 @@ fn print_failures(label: &str, failures: &Failures) {
 }
 
 fn exit_code(failures: &Failures) -> i32 {
-    if failures.is_empty() { EXIT_OK } else { EXIT_FAILURES }
+    if failures.is_empty() {
+        EXIT_OK
+    } else {
+        EXIT_FAILURES
+    }
 }
 
 fn list(items: &[String]) -> String {

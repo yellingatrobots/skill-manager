@@ -63,8 +63,12 @@ fn collect(paths: &Paths) -> Result<Vec<Provenance>> {
         let doc = SkillDoc::parse(&text)
             .map_err(|error| Error::Configuration(format!("{name}: {error}")))?;
 
-        let (alias, skill) = name.split_once(':').unwrap_or((BUILTIN_ALIAS, name.as_str()));
-        let source = manifest.as_ref().and_then(|manifest| manifest.sources.get(alias));
+        let (alias, skill) = name
+            .split_once(':')
+            .unwrap_or((BUILTIN_ALIAS, name.as_str()));
+        let source = manifest
+            .as_ref()
+            .and_then(|manifest| manifest.sources.get(alias));
         records.push(Provenance {
             name: name.clone(),
             source_alias: field(&doc, "source_alias").unwrap_or_else(|| alias.to_string()),
@@ -138,8 +142,15 @@ mod tests {
     #[test]
     fn lists_every_deployed_skill_including_the_builtin() {
         let home = home();
-        write_skill(&home.path().join("etc/ai/skills/codemode"), "codemode", "body\n");
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_skill(
+            &home.path().join("etc/ai/skills/codemode"),
+            "codemode",
+            "body\n",
+        );
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
         apply::run(&home.paths).unwrap();
 
         let records = run(&home.paths, None).unwrap();
@@ -151,8 +162,15 @@ mod tests {
     #[test]
     fn reports_a_local_source_from_the_manifest_and_working_tree() {
         let home = home();
-        write_skill(&home.path().join("etc/ai/skills/codemode"), "codemode", "body\n");
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_skill(
+            &home.path().join("etc/ai/skills/codemode"),
+            "codemode",
+            "body\n",
+        );
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
         apply::run(&home.paths).unwrap();
 
         let record = &run(&home.paths, Some("me:codemode")).unwrap()[0];
@@ -163,7 +181,13 @@ mod tests {
         assert!(record.upstream_coordinate.starts_with("sha256:"));
         assert_eq!(
             record.resolved_path.as_deref(),
-            Some(home.path().join("etc/ai/skills").display().to_string().as_str())
+            Some(
+                home.path()
+                    .join("etc/ai/skills")
+                    .display()
+                    .to_string()
+                    .as_str()
+            )
         );
         assert!(record.digest.is_none());
     }
@@ -172,13 +196,24 @@ mod tests {
     fn reports_a_remote_source_with_its_locked_digest() {
         let home = home();
         let upstream = git_origin(&[("handoff/SKILL.md", &skill_text("handoff", "body\n"))]);
-        write_manifest(&home, &format!("version = 1\n[sources.mp]\ngit = \"{}\"\n", upstream.path().display()));
+        write_manifest(
+            &home,
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\n",
+                upstream.path().display()
+            ),
+        );
         update::run(&home.paths, None, false).unwrap();
 
         let record = &run(&home.paths, Some("mp:handoff")).unwrap()[0];
 
         assert!(record.upstream_coordinate.starts_with("git:"));
-        assert!(record.digest.as_deref().is_some_and(|digest| digest.starts_with("sha256:")));
+        assert!(
+            record
+                .digest
+                .as_deref()
+                .is_some_and(|digest| digest.starts_with("sha256:"))
+        );
         assert_eq!(record.source_kind.as_deref(), Some("git"));
         assert!(record.resolved_path.is_none());
     }
@@ -186,8 +221,15 @@ mod tests {
     #[test]
     fn serializes_a_stable_json_record() {
         let home = home();
-        write_skill(&home.path().join("etc/ai/skills/codemode"), "codemode", "body\n");
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_skill(
+            &home.path().join("etc/ai/skills/codemode"),
+            "codemode",
+            "body\n",
+        );
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
         apply::run(&home.paths).unwrap();
 
         let records = run(&home.paths, Some("me:codemode")).unwrap();
@@ -198,7 +240,12 @@ mod tests {
         assert_eq!(record["source_alias"], "me");
         assert_eq!(record["source_kind"], "path");
         assert!(record["digest"].is_null());
-        assert!(record["deployed_path"].as_str().unwrap().contains("me:codemode"));
+        assert!(
+            record["deployed_path"]
+                .as_str()
+                .unwrap()
+                .contains("me:codemode")
+        );
     }
 
     #[test]
@@ -206,20 +253,37 @@ mod tests {
         let home = home();
         write_manifest(&home, "version = 1\n");
         apply::run(&home.paths).unwrap();
-        assert!(run(&home.paths, Some("me:absent")).unwrap_err().to_string().contains("not deployed"));
+        assert!(
+            run(&home.paths, Some("me:absent"))
+                .unwrap_err()
+                .to_string()
+                .contains("not deployed")
+        );
     }
 
     #[test]
     fn nothing_deployed_points_at_apply() {
         let home = home();
-        assert!(run(&home.paths, None).unwrap_err().to_string().contains("skill-manager apply"));
+        assert!(
+            run(&home.paths, None)
+                .unwrap_err()
+                .to_string()
+                .contains("skill-manager apply")
+        );
     }
 
     #[test]
     fn human_output_is_concise() {
         let home = home();
-        write_skill(&home.path().join("etc/ai/skills/codemode"), "codemode", "body\n");
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_skill(
+            &home.path().join("etc/ai/skills/codemode"),
+            "codemode",
+            "body\n",
+        );
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
         apply::run(&home.paths).unwrap();
 
         let record = &run(&home.paths, Some("me:codemode")).unwrap()[0];

@@ -11,7 +11,9 @@ struct Sandbox {
 
 impl Sandbox {
     fn new() -> Self {
-        Sandbox { home: TempDir::new().unwrap() }
+        Sandbox {
+            home: TempDir::new().unwrap(),
+        }
     }
 
     fn path(&self) -> &Path {
@@ -30,7 +32,11 @@ impl Sandbox {
     fn write_manifest(&self, contents: &str) {
         let path = self.path().join("etc/ai/skills.toml");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, contents.replace("{home}", &self.path().display().to_string())).unwrap();
+        fs::write(
+            path,
+            contents.replace("{home}", &self.path().display().to_string()),
+        )
+        .unwrap();
     }
 
     fn write_skill(&self, name: &str, body: &str) {
@@ -62,14 +68,27 @@ fn code(output: &Output) -> i32 {
 
 /// Store entries are read-only, so write permission is restored before removal.
 fn remove_read_only_tree(path: &Path) {
-    let output = Command::new("chmod").args(["-R", "u+w"]).arg(path).output().unwrap();
+    let output = Command::new("chmod")
+        .args(["-R", "u+w"])
+        .arg(path)
+        .output()
+        .unwrap();
     assert!(output.status.success());
     fs::remove_dir_all(path).unwrap();
 }
 
 fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
-    assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn git_origin(files: &[(&str, &str)]) -> TempDir {
@@ -99,7 +118,11 @@ fn apply_deploys_a_local_source_into_both_targets() {
     assert!(stdout(&output).contains("deployed 1 skill(s)"));
     for target in [".claude/skills", ".agents/skills"] {
         let deployed = sandbox.path().join(target).join("me:codemode/SKILL.md");
-        assert!(fs::read_to_string(deployed).unwrap().contains("name: me:codemode\n"));
+        assert!(
+            fs::read_to_string(deployed)
+                .unwrap()
+                .contains("name: me:codemode\n")
+        );
     }
     assert!(sandbox.target("sm:provenance").exists());
 }
@@ -181,7 +204,12 @@ fn info_reports_provenance_as_text_and_json() {
     let json: serde_json::Value = serde_json::from_str(&stdout(&detail)).unwrap();
     assert_eq!(json[0]["name"], "me:codemode");
     assert_eq!(json[0]["source_kind"], "path");
-    assert!(json[0]["upstream_coordinate"].as_str().unwrap().starts_with("sha256:"));
+    assert!(
+        json[0]["upstream_coordinate"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:")
+    );
 }
 
 #[test]
@@ -229,7 +257,9 @@ fn help_lists_every_command() {
     let sandbox = Sandbox::new();
     let output = sandbox.run(&["--help"]);
     let text = stdout(&output);
-    for command in ["apply", "update", "hydrate", "add", "remove", "info", "verify"] {
+    for command in [
+        "apply", "update", "hydrate", "add", "remove", "info", "verify",
+    ] {
         assert!(text.contains(command), "`{command}` missing from help");
     }
 }

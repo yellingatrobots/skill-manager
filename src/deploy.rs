@@ -38,8 +38,10 @@ impl<'a> Deployment<'a> {
     pub fn apply(&self, deployables: &[Deployable]) -> Result<Applied> {
         let generation = self.materialize_generation(deployables)?;
         let switched = self.switch_current(&generation)?;
-        let names: BTreeSet<String> =
-            deployables.iter().map(Deployable::deployed_name).collect::<BTreeSet<_>>();
+        let names: BTreeSet<String> = deployables
+            .iter()
+            .map(Deployable::deployed_name)
+            .collect::<BTreeSet<_>>();
         let names = expected_names(names);
 
         let mut targets = Vec::new();
@@ -48,14 +50,18 @@ impl<'a> Deployment<'a> {
         }
         self.prune_generations(&generation)?;
 
-        Ok(Applied { generation, switched, targets })
+        Ok(Applied {
+            generation,
+            switched,
+            targets,
+        })
     }
 
     /// Builds the generation unless its digest is already present.
     fn materialize_generation(&self, deployables: &[Deployable]) -> Result<Digest> {
         fs::create_dir_all(&self.paths.generations).at(&self.paths.generations)?;
-        let staging = tempfile::TempDir::new_in(&self.paths.generations)
-            .at(&self.paths.generations)?;
+        let staging =
+            tempfile::TempDir::new_in(&self.paths.generations).at(&self.paths.generations)?;
         let staged = staging.path().join("generation");
         generate::build(&staged, deployables)?;
 
@@ -64,7 +70,9 @@ impl<'a> Deployment<'a> {
         if destination.is_dir() {
             return Ok(digest);
         }
-        let parent = destination.parent().expect("generation paths have a parent");
+        let parent = destination
+            .parent()
+            .expect("generation paths have a parent");
         fs::create_dir_all(parent).at(parent)?;
         match fs::rename(&staged, &destination) {
             Ok(()) => fsx::make_read_only(&destination).map(|()| digest),
@@ -83,7 +91,10 @@ impl<'a> Deployment<'a> {
     }
 
     fn sync_target(&self, target: &Path, expected: &BTreeSet<String>) -> Result<TargetReport> {
-        let mut report = TargetReport { path: target.to_path_buf(), ..TargetReport::default() };
+        let mut report = TargetReport {
+            path: target.to_path_buf(),
+            ..TargetReport::default()
+        };
         fs::create_dir_all(target).at(target)?;
 
         for entry in fs::read_dir(target).at(target)? {
@@ -151,7 +162,9 @@ fn expected_names(mut names: BTreeSet<String>) -> BTreeSet<String> {
 }
 
 pub fn file_name(path: &Path) -> String {
-    path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -192,11 +205,17 @@ mod tests {
         assert!(applied.switched);
         for target in &paths.targets {
             let link = target.join("mp:handoff");
-            assert_eq!(fs::read_link(&link).unwrap(), paths.current.join("mp:handoff"));
+            assert_eq!(
+                fs::read_link(&link).unwrap(),
+                paths.current.join("mp:handoff")
+            );
             assert!(link.join("SKILL.md").is_file());
             assert!(target.join("sm:provenance/SKILL.md").is_file());
         }
-        assert_eq!(fs::read_link(&paths.current).unwrap(), paths.generation(&applied.generation));
+        assert_eq!(
+            fs::read_link(&paths.current).unwrap(),
+            paths.generation(&applied.generation)
+        );
     }
 
     #[test]
@@ -204,7 +223,9 @@ mod tests {
         let (_home, paths) = home();
         let (_source, skill) = deployable("mp", "handoff", "body\n");
 
-        let first = Deployment::new(&paths).apply(std::slice::from_ref(&skill)).unwrap();
+        let first = Deployment::new(&paths)
+            .apply(std::slice::from_ref(&skill))
+            .unwrap();
         let second = Deployment::new(&paths).apply(&[skill]).unwrap();
 
         assert_eq!(first.generation, second.generation);
@@ -225,7 +246,10 @@ mod tests {
         assert!(second.switched);
         assert!(!paths.generation(&first.generation).exists());
         assert_eq!(
-            fs::read_to_string(paths.targets[0].join("mp:handoff/SKILL.md")).unwrap().lines().last(),
+            fs::read_to_string(paths.targets[0].join("mp:handoff/SKILL.md"))
+                .unwrap()
+                .lines()
+                .last(),
             Some("two")
         );
     }
@@ -239,7 +263,12 @@ mod tests {
         Deployment::new(&paths).apply(&[one.clone(), two]).unwrap();
         let applied = Deployment::new(&paths).apply(&[one]).unwrap();
 
-        assert!(applied.targets.iter().all(|target| target.removed == ["mp:tdd"]));
+        assert!(
+            applied
+                .targets
+                .iter()
+                .all(|target| target.removed == ["mp:tdd"])
+        );
         assert!(!paths.targets[0].join("mp:tdd").exists());
         assert!(paths.targets[0].join("mp:handoff").exists());
     }
@@ -255,7 +284,10 @@ mod tests {
         let applied = Deployment::new(&paths).apply(&[skill]).unwrap();
 
         assert_eq!(applied.targets[0].conflicts, ["mp:handoff"]);
-        assert_eq!(fs::read_to_string(foreign.join("SKILL.md")).unwrap(), "not ours");
+        assert_eq!(
+            fs::read_to_string(foreign.join("SKILL.md")).unwrap(),
+            "not ours"
+        );
         assert!(applied.targets[1].conflicts.is_empty());
     }
 
@@ -291,12 +323,18 @@ mod tests {
         let (_source, skill) = deployable("mp", "handoff", "body\n");
         let link = paths.targets[0].join("mp:handoff");
         fs::create_dir_all(&paths.targets[0]).unwrap();
-        std::os::unix::fs::symlink(paths.deployed.join("generations/sha256/old/mp:handoff"), &link)
-            .unwrap();
+        std::os::unix::fs::symlink(
+            paths.deployed.join("generations/sha256/old/mp:handoff"),
+            &link,
+        )
+        .unwrap();
 
         let applied = Deployment::new(&paths).apply(&[skill]).unwrap();
 
-        assert_eq!(fs::read_link(&link).unwrap(), paths.current.join("mp:handoff"));
+        assert_eq!(
+            fs::read_link(&link).unwrap(),
+            paths.current.join("mp:handoff")
+        );
         assert!(applied.targets[0].conflicts.is_empty());
     }
 }

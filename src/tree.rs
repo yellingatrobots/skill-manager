@@ -20,17 +20,18 @@ impl Digest {
     pub fn parse(text: &str) -> Option<Self> {
         let hex = text.strip_prefix("sha256:")?;
         let well_formed = hex.len() == 64
-            && hex.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
+            && hex
+                .chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
         well_formed.then(|| Digest(text.to_string()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
     }
 
     /// The store lays entries out as `sha256/<hex>`.
     pub fn store_relative_path(&self) -> PathBuf {
-        let (algorithm, hex) = self.0.split_once(':').expect("digest is algorithm-prefixed");
+        let (algorithm, hex) = self
+            .0
+            .split_once(':')
+            .expect("digest is algorithm-prefixed");
         Path::new(algorithm).join(hex)
     }
 }
@@ -61,7 +62,10 @@ impl Tree {
         let mut files = Vec::new();
         collect(root, root, &mut files)?;
         files.sort_by(|a, b| a.rel.as_bytes().cmp(b.rel.as_bytes()));
-        Ok(Tree { root: root.to_path_buf(), files })
+        Ok(Tree {
+            root: root.to_path_buf(),
+            files,
+        })
     }
 
     pub fn digest(&self) -> Result<Digest> {
@@ -78,16 +82,13 @@ impl Tree {
         Ok(Digest(format!("sha256:{}", hex(&hasher.finalize()))))
     }
 
+    #[cfg(test)]
     pub fn files(&self) -> &[TreeFile] {
         &self.files
     }
 
     pub fn root(&self) -> &Path {
         &self.root
-    }
-
-    pub fn contains(&self, rel: &str) -> bool {
-        self.files.iter().any(|file| file.rel == rel)
     }
 
     pub fn read_file(&self, rel: &str) -> Result<Option<Vec<u8>>> {
@@ -106,7 +107,11 @@ impl Tree {
                 fs::create_dir_all(parent).at(parent)?;
             }
             fs::copy(&file.abs, &target).at(&target)?;
-            let mode = if file.executable { EXECUTABLE_MODE } else { FILE_MODE };
+            let mode = if file.executable {
+                EXECUTABLE_MODE
+            } else {
+                FILE_MODE
+            };
             fs::set_permissions(&target, fs::Permissions::from_mode(mode)).at(&target)?;
         }
         Ok(())
@@ -189,7 +194,10 @@ mod tests {
         let Digest(text) = digest_of(dir.path());
         let hex = text.strip_prefix("sha256:").expect("sha256 prefix");
         assert_eq!(hex.len(), 64);
-        assert!(hex.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()));
+        assert!(
+            hex.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+        );
     }
 
     #[test]
@@ -249,7 +257,8 @@ mod tests {
     #[test]
     fn symlinks_are_rejected() {
         let dir = fixture(&[("SKILL.md", "body")]);
-        std::os::unix::fs::symlink(dir.path().join("SKILL.md"), dir.path().join("link.md")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("SKILL.md"), dir.path().join("link.md"))
+            .unwrap();
         assert!(Tree::read(dir.path()).is_err());
     }
 
@@ -275,13 +284,29 @@ mod tests {
         let dest = TempDir::new().unwrap();
         let out = dest.path().join("out");
 
-        Tree::read(src.path()).unwrap().materialize_into(&out).unwrap();
+        Tree::read(src.path())
+            .unwrap()
+            .materialize_into(&out)
+            .unwrap();
 
         assert_eq!(fs::read_to_string(out.join("SKILL.md")).unwrap(), "body");
-        assert_eq!(fs::read_to_string(out.join("ref/run.sh")).unwrap(), "#!/bin/sh");
-        let mode = fs::metadata(out.join("ref/run.sh")).unwrap().permissions().mode();
+        assert_eq!(
+            fs::read_to_string(out.join("ref/run.sh")).unwrap(),
+            "#!/bin/sh"
+        );
+        let mode = fs::metadata(out.join("ref/run.sh"))
+            .unwrap()
+            .permissions()
+            .mode();
         assert!(mode & 0o111 != 0);
-        assert!(fs::metadata(out.join("SKILL.md")).unwrap().permissions().mode() & 0o111 == 0);
+        assert!(
+            fs::metadata(out.join("SKILL.md"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o111
+                == 0
+        );
         assert_eq!(digest_of(&out), digest_of(src.path()));
     }
 }

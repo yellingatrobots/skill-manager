@@ -46,7 +46,10 @@ pub fn run(paths: &Paths) -> Result<VerifyReport> {
     verify_targets(paths, &expected_names, &mut problems)?;
     verify_generations(paths, &expected, &mut problems)?;
 
-    Ok(VerifyReport { checked: expected_names.len(), problems })
+    Ok(VerifyReport {
+        checked: expected_names.len(),
+        problems,
+    })
 }
 
 /// Only entries the current lock references are checked (ADR-0003).
@@ -60,13 +63,18 @@ fn verify_store(manifest: &Manifest, lock: &Lock, store: &Store, problems: &mut 
                 continue;
             }
             let Some(digest) = Digest::parse(&entry.digest) else {
-                problems.push(format!("{}:{name}: unusable digest `{}`", source.alias, entry.digest));
+                problems.push(format!(
+                    "{}:{name}: unusable digest `{}`",
+                    source.alias, entry.digest
+                ));
                 continue;
             };
             match store.verify(&digest) {
                 Ok(true) => {}
-                Ok(false) => problems
-                    .push(format!("{}:{name}: store entry {digest} no longer hashes to its digest", source.alias)),
+                Ok(false) => problems.push(format!(
+                    "{}:{name}: store entry {digest} no longer hashes to its digest",
+                    source.alias
+                )),
                 Err(error) => problems.push(format!("{}:{name}: {error}", source.alias)),
             }
         }
@@ -84,7 +92,10 @@ fn expected_generation(deployables: &[generate::Deployable]) -> Result<Digest> {
 
 fn verify_current(paths: &Paths, expected: &Digest, problems: &mut Failures) -> Result<()> {
     let Ok(current) = fs::read_link(&paths.current) else {
-        problems.push(format!("{}: no current generation; run `skill-manager apply`", paths.current.display()));
+        problems.push(format!(
+            "{}: no current generation; run `skill-manager apply`",
+            paths.current.display()
+        ));
         return Ok(());
     };
     if current != paths.generation(expected) {
@@ -95,17 +106,33 @@ fn verify_current(paths: &Paths, expected: &Digest, problems: &mut Failures) -> 
         ));
     }
     if !current.is_dir() {
-        problems.push(format!("{}: the current generation is missing", current.display()));
+        problems.push(format!(
+            "{}: the current generation is missing",
+            current.display()
+        ));
         return Ok(());
     }
     let actual = Tree::read(&current)?.digest()?;
-    if file_name(&current) != actual.store_relative_path().file_name().unwrap().to_string_lossy() {
-        problems.push(format!("{}: generated content no longer matches its digest", current.display()));
+    if file_name(&current)
+        != actual
+            .store_relative_path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+    {
+        problems.push(format!(
+            "{}: generated content no longer matches its digest",
+            current.display()
+        ));
     }
     Ok(())
 }
 
-fn verify_targets(paths: &Paths, expected: &BTreeSet<String>, problems: &mut Failures) -> Result<()> {
+fn verify_targets(
+    paths: &Paths,
+    expected: &BTreeSet<String>,
+    problems: &mut Failures,
+) -> Result<()> {
     let deployment = Deployment::new(paths);
     for target in &paths.targets {
         let mut present = BTreeSet::new();
@@ -123,18 +150,27 @@ fn verify_targets(paths: &Paths, expected: &BTreeSet<String>, problems: &mut Fai
             let name = file_name(&path);
             if !deployment.is_ours(&path) {
                 if expected.contains(&name) {
-                    problems.push(format!("{}: `{name}` was not written by skill-manager", target.display()));
+                    problems.push(format!(
+                        "{}: `{name}` was not written by skill-manager",
+                        target.display()
+                    ));
                 }
                 continue;
             }
             present.insert(name.clone());
             if !expected.contains(&name) {
-                problems.push(format!("{}: `{name}` is deployed but no longer selected", target.display()));
+                problems.push(format!(
+                    "{}: `{name}` is deployed but no longer selected",
+                    target.display()
+                ));
                 continue;
             }
             let wanted = paths.current.join(&name);
             if fs::read_link(&path).is_ok_and(|link| link != wanted) {
-                problems.push(format!("{}: `{name}` does not point at the current generation", target.display()));
+                problems.push(format!(
+                    "{}: `{name}` does not point at the current generation",
+                    target.display()
+                ));
             }
         }
 
@@ -153,12 +189,16 @@ fn verify_generations(paths: &Paths, expected: &Digest, problems: &mut Failures)
         Err(error) => return Err(Error::io(&paths.generations, error)),
     };
     for algorithm in algorithms {
-        let algorithm = algorithm.map_err(|error| Error::io(&paths.generations, error))?.path();
+        let algorithm = algorithm
+            .map_err(|error| Error::io(&paths.generations, error))?
+            .path();
         if !algorithm.is_dir() {
             continue;
         }
         for generation in fs::read_dir(&algorithm).map_err(|error| Error::io(&algorithm, error))? {
-            let generation = generation.map_err(|error| Error::io(&algorithm, error))?.path();
+            let generation = generation
+                .map_err(|error| Error::io(&algorithm, error))?
+                .path();
             if generation != kept {
                 problems.push(format!("{}: stale generation", generation.display()));
             }
@@ -177,8 +217,15 @@ mod tests {
 
     fn local_home() -> Home {
         let home = home();
-        write_skill(&home.path().join("etc/ai/skills/codemode"), "codemode", "body\n");
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_skill(
+            &home.path().join("etc/ai/skills/codemode"),
+            "codemode",
+            "body\n",
+        );
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
         apply::run(&home.paths).unwrap();
         home
     }
@@ -194,11 +241,20 @@ mod tests {
     #[test]
     fn an_edited_local_source_no_longer_matches() {
         let home = local_home();
-        write_skill(&home.path().join("etc/ai/skills/codemode"), "codemode", "edited\n");
+        write_skill(
+            &home.path().join("etc/ai/skills/codemode"),
+            "codemode",
+            "edited\n",
+        );
 
         let report = run(&home.paths).unwrap();
 
-        assert!(report.problems.iter().any(|problem| problem.contains("generate sha256:")));
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|problem| problem.contains("generate sha256:"))
+        );
     }
 
     #[test]
@@ -208,7 +264,12 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert!(report.problems.iter().any(|problem| problem.contains("`me:codemode` is not deployed")));
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|problem| problem.contains("`me:codemode` is not deployed"))
+        );
     }
 
     #[test]
@@ -220,7 +281,12 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert!(report.problems.iter().any(|problem| problem.contains("not written by skill-manager")));
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|problem| problem.contains("not written by skill-manager"))
+        );
     }
 
     #[test]
@@ -231,7 +297,12 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert!(report.problems.iter().any(|problem| problem.contains("no longer selected")));
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|problem| problem.contains("no longer selected"))
+        );
     }
 
     #[test]
@@ -243,7 +314,12 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert!(report.problems.iter().any(|problem| problem.contains("no longer matches its digest")));
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|problem| problem.contains("no longer matches its digest"))
+        );
     }
 
     #[test]
@@ -254,14 +330,25 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert!(report.problems.iter().any(|problem| problem.contains("stale generation")));
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|problem| problem.contains("stale generation"))
+        );
     }
 
     #[test]
     fn a_tampered_store_entry_is_reported() {
         let home = home();
         let upstream = git_origin(&[("handoff/SKILL.md", &skill_text("handoff", "body\n"))]);
-        write_manifest(&home, &format!("version = 1\n[sources.mp]\ngit = \"{}\"\n", upstream.path().display()));
+        write_manifest(
+            &home,
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\n",
+                upstream.path().display()
+            ),
+        );
         update::run(&home.paths, None, false).unwrap();
         let lock = Lock::read(&home.paths.lock).unwrap();
         let digest = Digest::parse(&lock.skill("mp", "handoff").unwrap().digest).unwrap();
@@ -271,22 +358,41 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert!(report.problems.iter().any(|problem| problem.contains("no longer hashes")));
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|problem| problem.contains("no longer hashes"))
+        );
     }
 
     #[test]
     fn a_manifest_that_no_longer_matches_the_lock_is_reported() {
         let home = home();
         let upstream = git_origin(&[("handoff/SKILL.md", &skill_text("handoff", "body\n"))]);
-        write_manifest(&home, &format!("version = 1\n[sources.mp]\ngit = \"{}\"\n", upstream.path().display()));
+        write_manifest(
+            &home,
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\n",
+                upstream.path().display()
+            ),
+        );
         update::run(&home.paths, None, false).unwrap();
         write_manifest(
             &home,
-            &format!("version = 1\n[sources.mp]\ngit = \"{}\"\nref = \"main\"\n", upstream.path().display()),
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\nref = \"main\"\n",
+                upstream.path().display()
+            ),
         );
 
         let report = run(&home.paths).unwrap();
 
-        assert!(report.problems.iter().any(|problem| problem.contains("skill-manager update")));
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|problem| problem.contains("skill-manager update"))
+        );
     }
 }

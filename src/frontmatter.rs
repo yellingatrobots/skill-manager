@@ -24,7 +24,10 @@ pub struct Frontmatter {
 
 impl Frontmatter {
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.entries.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        self.entries
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     /// Replaces `key` in place, or appends it when absent.
@@ -75,7 +78,10 @@ impl SkillDoc {
             }
         }
 
-        Ok(SkillDoc { frontmatter, body: body.to_string() })
+        Ok(SkillDoc {
+            frontmatter,
+            body: body.to_string(),
+        })
     }
 
     pub fn name(&self) -> &str {
@@ -219,7 +225,8 @@ fn read_plain_or_quoted(rest: &str, following: &[&str]) -> (String, usize) {
 }
 
 fn looks_like_mapping(line: &str) -> bool {
-    line.split_once(':').is_some_and(|(key, _)| !key.trim().is_empty() && !key.contains(' '))
+    line.split_once(':')
+        .is_some_and(|(key, _)| !key.trim().is_empty() && !key.contains(' '))
 }
 
 fn unquote(value: &str) -> String {
@@ -265,7 +272,9 @@ fn quote(value: &str) -> String {
         || value.contains(": ")
         || value.contains(" #")
         || value.ends_with(':')
-        || value.starts_with(['|', '>', '&', '*', '!', '%', '@', '`', '\'', '[', '{', '-', '?', '#']);
+        || value.starts_with([
+            '|', '>', '&', '*', '!', '%', '@', '`', '\'', '[', '{', '-', '?', '#',
+        ]);
     if !needs_quoting {
         return value.to_string();
     }
@@ -288,7 +297,8 @@ mod tests {
 
     #[test]
     fn reads_plain_scalars_and_body() {
-        let doc = parse("---\nname: handoff\ndescription: Hands off work\n---\n# Handoff\n\nbody\n");
+        let doc =
+            parse("---\nname: handoff\ndescription: Hands off work\n---\n# Handoff\n\nbody\n");
         assert_eq!(doc.name(), "handoff");
         assert_eq!(doc.frontmatter.get("description"), Some("Hands off work"));
         assert_eq!(doc.body, "# Handoff\n\nbody\n");
@@ -304,13 +314,21 @@ mod tests {
     #[test]
     fn keeps_colons_inside_unquoted_descriptions() {
         let doc = parse("---\nname: tdd\ndescription: Use when: writing tests\n---\n");
-        assert_eq!(doc.frontmatter.get("description"), Some("Use when: writing tests"));
+        assert_eq!(
+            doc.frontmatter.get("description"),
+            Some("Use when: writing tests")
+        );
     }
 
     #[test]
     fn joins_folded_block_scalars() {
-        let doc = parse("---\nname: tdd\ndescription: >-\n  first line\n  second line\nversion: 2\n---\n");
-        assert_eq!(doc.frontmatter.get("description"), Some("first line second line"));
+        let doc = parse(
+            "---\nname: tdd\ndescription: >-\n  first line\n  second line\nversion: 2\n---\n",
+        );
+        assert_eq!(
+            doc.frontmatter.get("description"),
+            Some("first line second line")
+        );
         assert_eq!(doc.frontmatter.get("version"), Some("2"));
     }
 
@@ -328,7 +346,10 @@ mod tests {
 
     #[test]
     fn rejects_documents_without_frontmatter() {
-        assert_eq!(SkillDoc::parse("# no frontmatter\n"), Err(FrontmatterError::MissingFrontmatter));
+        assert_eq!(
+            SkillDoc::parse("# no frontmatter\n"),
+            Err(FrontmatterError::MissingFrontmatter)
+        );
     }
 
     #[test]
@@ -341,8 +362,14 @@ mod tests {
 
     #[test]
     fn rejects_missing_and_empty_required_keys() {
-        assert_eq!(SkillDoc::parse("---\nname: x\n---\n"), Err(FrontmatterError::MissingKey("description")));
-        assert_eq!(SkillDoc::parse("---\ndescription: y\n---\n"), Err(FrontmatterError::MissingKey("name")));
+        assert_eq!(
+            SkillDoc::parse("---\nname: x\n---\n"),
+            Err(FrontmatterError::MissingKey("description"))
+        );
+        assert_eq!(
+            SkillDoc::parse("---\ndescription: y\n---\n"),
+            Err(FrontmatterError::MissingKey("name"))
+        );
         assert_eq!(
             SkillDoc::parse("---\nname:\ndescription: y\n---\n"),
             Err(FrontmatterError::EmptyKey("name"))
@@ -373,6 +400,9 @@ mod tests {
     fn round_trips_extra_keys() {
         let doc = parse("---\nname: x\ndescription: d\nallowed-tools: Read, Bash\n---\nbody\n");
         assert_eq!(doc.frontmatter.get("allowed-tools"), Some("Read, Bash"));
-        assert_eq!(parse(&doc.render()).frontmatter.get("allowed-tools"), Some("Read, Bash"));
+        assert_eq!(
+            parse(&doc.render()).frontmatter.get("allowed-tools"),
+            Some("Read, Bash")
+        );
     }
 }

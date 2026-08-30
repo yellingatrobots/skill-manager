@@ -36,14 +36,19 @@ impl std::fmt::Display for Selection {
 
 pub fn parse_selection(text: &str) -> Result<Selection> {
     let (alias, skill) = text.split_once(':').ok_or_else(|| {
-        Error::Configuration(format!("`{text}` is not a namespaced name; expected <alias>:<skill>"))
+        Error::Configuration(format!(
+            "`{text}` is not a namespaced name; expected <alias>:<skill>"
+        ))
     })?;
     if alias.is_empty() || skill.is_empty() || skill.contains(':') {
         return Err(Error::Configuration(format!(
             "`{text}` is not a namespaced name; expected <alias>:<skill>"
         )));
     }
-    Ok(Selection { alias: alias.to_string(), skill: skill.to_string() })
+    Ok(Selection {
+        alias: alias.to_string(),
+        skill: skill.to_string(),
+    })
 }
 
 pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
@@ -58,10 +63,16 @@ pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     for selection in &selections {
         let source = manifest.source(&selection.alias)?;
         if manifest_edit::selects_all(&text, &source.alias)? {
-            unchanged.push(format!("{selection}: source `{}` already selects every skill", source.alias));
+            unchanged.push(format!(
+                "{selection}: source `{}` already selects every skill",
+                source.alias
+            ));
             continue;
         }
-        wanted.entry(selection.alias.clone()).or_default().push(selection.skill.clone());
+        wanted
+            .entry(selection.alias.clone())
+            .or_default()
+            .push(selection.skill.clone());
     }
 
     // Preflight: confirm every requested skill exists before either file changes.
@@ -75,7 +86,10 @@ pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     let mut edited = text.clone();
     let mut changed = Vec::new();
     for selection in &selections {
-        if !wanted.get(&selection.alias).is_some_and(|skills| skills.contains(&selection.skill)) {
+        if !wanted
+            .get(&selection.alias)
+            .is_some_and(|skills| skills.contains(&selection.skill))
+        {
             continue;
         }
         match manifest_edit::add_skill(&edited, &selection.alias, &selection.skill)? {
@@ -88,7 +102,12 @@ pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     }
 
     if changed.is_empty() {
-        return Ok(EditReport { changed, unchanged, applied: None, failures });
+        return Ok(EditReport {
+            changed,
+            unchanged,
+            applied: None,
+            failures,
+        });
     }
 
     let manifest = Manifest::parse(&edited)?;
@@ -99,7 +118,12 @@ pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
         failures.push(failure);
     }
 
-    Ok(EditReport { changed, unchanged, applied: Some(applied), failures })
+    Ok(EditReport {
+        changed,
+        unchanged,
+        applied: Some(applied),
+        failures,
+    })
 }
 
 pub fn remove(paths: &Paths, requested: &[String]) -> Result<EditReport> {
@@ -131,7 +155,12 @@ pub fn remove(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     }
 
     if changed.is_empty() {
-        return Ok(EditReport { changed, unchanged, applied: None, failures: Failures::new() });
+        return Ok(EditReport {
+            changed,
+            unchanged,
+            applied: None,
+            failures: Failures::new(),
+        });
     }
 
     let manifest = Manifest::parse(&edited)?;
@@ -143,7 +172,12 @@ pub fn remove(paths: &Paths, requested: &[String]) -> Result<EditReport> {
         failures.push(failure);
     }
 
-    Ok(EditReport { changed, unchanged, applied: Some(applied), failures })
+    Ok(EditReport {
+        changed,
+        unchanged,
+        applied: Some(applied),
+        failures,
+    })
 }
 
 /// Resolves only the affected remote aliases; local sources need no resolution.
@@ -191,7 +225,10 @@ fn confirm_available(
         }
     }
 
-    let entry = staged.sources.entry(source.alias.clone()).or_insert_with(|| locked.clone());
+    let entry = staged
+        .sources
+        .entry(source.alias.clone())
+        .or_insert_with(|| locked.clone());
     entry.kind = locked.kind.clone();
     entry.url = locked.url.clone();
     entry.git_ref = locked.git_ref.clone();
@@ -202,7 +239,9 @@ fn confirm_available(
 
 fn parse_all(requested: &[String]) -> Result<Vec<Selection>> {
     if requested.is_empty() {
-        return Err(Error::Configuration("expected at least one <alias>:<skill>".to_string()));
+        return Err(Error::Configuration(
+            "expected at least one <alias>:<skill>".to_string(),
+        ));
     }
     requested.iter().map(|text| parse_selection(text)).collect()
 }
@@ -220,11 +259,17 @@ mod tests {
     fn local_home(skills: &[&str], selected: &str) -> Home {
         let home = home();
         for name in skills {
-            write_skill(&home.path().join("etc/ai/skills").join(name), name, "body\n");
+            write_skill(
+                &home.path().join("etc/ai/skills").join(name),
+                name,
+                "body\n",
+            );
         }
         write_manifest(
             &home,
-            &format!("version = 1\n# mine\n[sources.me]\npath = \"{{home}}/etc/ai/skills\"\nskills = [{selected}]\n"),
+            &format!(
+                "version = 1\n# mine\n[sources.me]\npath = \"{{home}}/etc/ai/skills\"\nskills = [{selected}]\n"
+            ),
         );
         home
     }
@@ -247,7 +292,9 @@ mod tests {
         let home = local_home(&["codemode"], "\"codemode\"");
         let before = fs::read_to_string(&home.paths.manifest).unwrap();
 
-        let error = add(&home.paths, &["me:absent".to_string()]).unwrap_err().to_string();
+        let error = add(&home.paths, &["me:absent".to_string()])
+            .unwrap_err()
+            .to_string();
 
         assert!(error.contains("me:absent"));
         assert_eq!(fs::read_to_string(&home.paths.manifest).unwrap(), before);
@@ -257,8 +304,15 @@ mod tests {
     #[test]
     fn add_is_a_reported_no_op_when_the_source_selects_everything() {
         let home = home();
-        write_skill(&home.path().join("etc/ai/skills/codemode"), "codemode", "body\n");
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_skill(
+            &home.path().join("etc/ai/skills/codemode"),
+            "codemode",
+            "body\n",
+        );
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
 
         let report = add(&home.paths, &["me:codemode".to_string()]).unwrap();
 
@@ -305,7 +359,12 @@ mod tests {
     #[test]
     fn add_does_not_create_sources() {
         let home = local_home(&["codemode"], "\"codemode\"");
-        assert!(add(&home.paths, &["other:x".to_string()]).unwrap_err().to_string().contains("no source"));
+        assert!(
+            add(&home.paths, &["other:x".to_string()])
+                .unwrap_err()
+                .to_string()
+                .contains("no source")
+        );
     }
 
     #[test]
@@ -316,7 +375,11 @@ mod tests {
         let report = remove(&home.paths, &["me:tdd".to_string()]).unwrap();
 
         assert_eq!(report.changed, ["me:tdd"]);
-        assert!(fs::read_to_string(&home.paths.manifest).unwrap().contains(r#"skills = ["codemode"]"#));
+        assert!(
+            fs::read_to_string(&home.paths.manifest)
+                .unwrap()
+                .contains(r#"skills = ["codemode"]"#)
+        );
         assert!(!home.paths.targets[0].join("me:tdd").exists());
         assert!(home.paths.targets[0].join("me:codemode").exists());
     }
@@ -324,10 +387,19 @@ mod tests {
     #[test]
     fn remove_refuses_a_source_that_selects_everything() {
         let home = home();
-        write_skill(&home.path().join("etc/ai/skills/codemode"), "codemode", "body\n");
-        write_manifest(&home, "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n");
+        write_skill(
+            &home.path().join("etc/ai/skills/codemode"),
+            "codemode",
+            "body\n",
+        );
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
 
-        let error = remove(&home.paths, &["me:codemode".to_string()]).unwrap_err().to_string();
+        let error = remove(&home.paths, &["me:codemode".to_string()])
+            .unwrap_err()
+            .to_string();
 
         assert!(error.contains("all except"));
     }
@@ -349,7 +421,10 @@ mod tests {
         assert!(parse_selection("mp:").is_err());
         assert_eq!(
             parse_selection("mp:handoff").unwrap(),
-            Selection { alias: "mp".into(), skill: "handoff".into() }
+            Selection {
+                alias: "mp".into(),
+                skill: "handoff".into()
+            }
         );
     }
 }

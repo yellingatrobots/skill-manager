@@ -11,10 +11,19 @@ pub const MANIFEST_VERSION: i64 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Transport {
-    Git { url: String },
-    GitHub { repo: String },
-    WellKnown { endpoint: String },
-    Path { configured: String, resolved: PathBuf },
+    Git {
+        url: String,
+    },
+    GitHub {
+        repo: String,
+    },
+    WellKnown {
+        endpoint: String,
+    },
+    Path {
+        configured: String,
+        resolved: PathBuf,
+    },
 }
 
 impl Transport {
@@ -85,8 +94,7 @@ impl Manifest {
     }
 
     pub fn read(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .map_err(|source| Error::io(path, source))?;
+        let text = std::fs::read_to_string(path).map_err(|source| Error::io(path, source))?;
         Manifest::parse(&text)
     }
 
@@ -151,7 +159,8 @@ fn build_source(alias: &str, raw: RawSource) -> Result<Source> {
         }
     };
 
-    if raw.git_ref.is_some() && !matches!(transport, Transport::Git { .. } | Transport::GitHub { .. })
+    if raw.git_ref.is_some()
+        && !matches!(transport, Transport::Git { .. } | Transport::GitHub { .. })
     {
         return Err(invalid(format!(
             "source `{alias}` sets `ref`, which only applies to git and github sources"
@@ -186,7 +195,9 @@ fn build_transport(alias: &str, key: &str, value: String) -> Result<Transport> {
         "git" => Ok(Transport::Git { url: value }),
         "github" => {
             validate_github_shorthand(alias, &value)?;
-            Ok(Transport::GitHub { repo: value.trim_end_matches('/').to_string() })
+            Ok(Transport::GitHub {
+                repo: value.trim_end_matches('/').to_string(),
+            })
         }
         "well_known" => {
             if !value.starts_with("https://") {
@@ -196,14 +207,19 @@ fn build_transport(alias: &str, key: &str, value: String) -> Result<Transport> {
             }
             Ok(Transport::WellKnown { endpoint: value })
         }
-        "path" => Ok(Transport::Path { resolved: expand_tilde(&value), configured: value }),
+        "path" => Ok(Transport::Path {
+            resolved: expand_tilde(&value),
+            configured: value,
+        }),
         _ => unreachable!("transport keys are enumerated above"),
     }
 }
 
 fn validate_alias(alias: &str) -> Result<()> {
     if alias == RESERVED_ALIAS {
-        return Err(invalid(format!("`{RESERVED_ALIAS}` is a reserved source alias")));
+        return Err(invalid(format!(
+            "`{RESERVED_ALIAS}` is a reserved source alias"
+        )));
     }
     if alias.is_empty() {
         return Err(invalid("a source alias may not be empty"));
@@ -246,7 +262,9 @@ fn validate_skills(alias: &str, skills: &[String]) -> Result<()> {
     let mut seen = std::collections::BTreeSet::new();
     for skill in skills {
         if skill.is_empty() {
-            return Err(invalid(format!("source `{alias}` selects an empty skill name")));
+            return Err(invalid(format!(
+                "source `{alias}` selects an empty skill name"
+            )));
         }
         if skill.contains(':') || skill.contains('/') {
             return Err(invalid(format!(
@@ -309,10 +327,21 @@ mod tests {
         );
 
         let mp = &manifest.sources["mp"];
-        assert_eq!(mp.transport, Transport::GitHub { repo: "mattpocock/skills".into() });
-        assert_eq!(mp.transport.url(), "https://github.com/mattpocock/skills.git");
+        assert_eq!(
+            mp.transport,
+            Transport::GitHub {
+                repo: "mattpocock/skills".into()
+            }
+        );
+        assert_eq!(
+            mp.transport.url(),
+            "https://github.com/mattpocock/skills.git"
+        );
         assert_eq!(mp.git_ref.as_deref(), Some("main"));
-        assert_eq!(mp.skills.as_deref(), Some(["handoff".to_string(), "tdd".to_string()].as_slice()));
+        assert_eq!(
+            mp.skills.as_deref(),
+            Some(["handoff".to_string(), "tdd".to_string()].as_slice())
+        );
 
         assert_eq!(manifest.sources["kepano"].dir.as_deref(), Some("skills"));
         assert_eq!(manifest.sources["likec4"].transport.kind(), "well_known");
@@ -324,7 +353,11 @@ mod tests {
     fn expands_a_leading_tilde_in_paths() {
         unsafe { std::env::set_var("HOME", "/home/tester") };
         let manifest = parse("version = 1\n[sources.me]\npath = \"~/etc/ai/skills\"\n");
-        let Transport::Path { configured, resolved } = &manifest.sources["me"].transport else {
+        let Transport::Path {
+            configured,
+            resolved,
+        } = &manifest.sources["me"].transport
+        else {
             panic!("expected a path transport");
         };
         assert_eq!(configured, "~/etc/ai/skills");
@@ -333,8 +366,10 @@ mod tests {
 
     #[test]
     fn rejects_unknown_keys() {
-        assert!(error("version = 1\n[sources.mp]\ngithub = \"a/b\"\nbranch = \"main\"\n")
-            .contains("branch"));
+        assert!(
+            error("version = 1\n[sources.mp]\ngithub = \"a/b\"\nbranch = \"main\"\n")
+                .contains("branch")
+        );
     }
 
     #[test]
@@ -358,7 +393,9 @@ mod tests {
 
     #[test]
     fn restricts_ref_and_dir_to_the_transports_that_support_them() {
-        assert!(error("version = 1\n[sources.me]\npath = \"/x\"\nref = \"main\"\n").contains("`ref`"));
+        assert!(
+            error("version = 1\n[sources.me]\npath = \"/x\"\nref = \"main\"\n").contains("`ref`")
+        );
         assert!(
             error("version = 1\n[sources.l]\nwell_known = \"https://x/\"\ndir = \"skills\"\n")
                 .contains("`dir`")
@@ -367,13 +404,22 @@ mod tests {
 
     #[test]
     fn rejects_dir_escaping_the_source() {
-        assert!(error("version = 1\n[sources.mp]\ngithub = \"a/b\"\ndir = \"../x\"\n").contains("relative"));
-        assert!(error("version = 1\n[sources.mp]\ngithub = \"a/b\"\ndir = \"/x\"\n").contains("relative"));
+        assert!(
+            error("version = 1\n[sources.mp]\ngithub = \"a/b\"\ndir = \"../x\"\n")
+                .contains("relative")
+        );
+        assert!(
+            error("version = 1\n[sources.mp]\ngithub = \"a/b\"\ndir = \"/x\"\n")
+                .contains("relative")
+        );
     }
 
     #[test]
     fn rejects_malformed_github_shorthand() {
-        assert!(error("version = 1\n[sources.mp]\ngithub = \"mattpocock\"\n").contains("owner/repository"));
+        assert!(
+            error("version = 1\n[sources.mp]\ngithub = \"mattpocock\"\n")
+                .contains("owner/repository")
+        );
         assert!(
             error("version = 1\n[sources.mp]\ngithub = \"git@github.com:a/b.git\"\n")
                 .contains("owner/repository")
@@ -387,15 +433,20 @@ mod tests {
 
     #[test]
     fn rejects_invalid_skill_selections() {
-        assert!(error("version = 1\n[sources.mp]\ngithub = \"a/b\"\nskills = [\"mp:handoff\"]\n")
-            .contains("invalid skill name"));
-        assert!(error("version = 1\n[sources.mp]\ngithub = \"a/b\"\nskills = [\"x\", \"x\"]\n")
-            .contains("twice"));
+        assert!(
+            error("version = 1\n[sources.mp]\ngithub = \"a/b\"\nskills = [\"mp:handoff\"]\n")
+                .contains("invalid skill name")
+        );
+        assert!(
+            error("version = 1\n[sources.mp]\ngithub = \"a/b\"\nskills = [\"x\", \"x\"]\n")
+                .contains("twice")
+        );
     }
 
     #[test]
     fn selects_only_listed_skills_when_skills_is_present() {
-        let manifest = parse("version = 1\n[sources.mp]\ngithub = \"a/b\"\nskills = [\"handoff\"]\n");
+        let manifest =
+            parse("version = 1\n[sources.mp]\ngithub = \"a/b\"\nskills = [\"handoff\"]\n");
         assert!(manifest.sources["mp"].selects("handoff"));
         assert!(!manifest.sources["mp"].selects("tdd"));
     }
