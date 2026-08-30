@@ -80,6 +80,20 @@ fn stage(
     store: &Store,
     failures: &mut Failures,
 ) -> Result<LockedSource> {
+    let required: Vec<String> = source.skills.clone().unwrap_or_default();
+    stage_selection(source, previous, store, failures, &|name| source.selects(name), &required)
+}
+
+/// Staging for an explicit set of skills, which `add` needs before the manifest
+/// has been edited to select them.
+pub(crate) fn stage_selection(
+    source: &Source,
+    previous: Option<&LockedSource>,
+    store: &Store,
+    failures: &mut Failures,
+    selects: &dyn Fn(&str) -> bool,
+    required: &[String],
+) -> Result<LockedSource> {
     let mut locked = LockedSource {
         kind: source.transport.kind().to_string(),
         url: source.transport.url(),
@@ -89,26 +103,29 @@ fn stage(
     };
 
     match &source.transport {
-        crate::manifest::Transport::WellKnown { endpoint } => {
-            stage_well_known(source, endpoint, store, previous, &mut locked, failures)?
-        }
-        _ => stage_git(source, store, previous, &mut locked, failures)?,
+        crate::manifest::Transport::WellKnown { endpoint } => stage_well_known(
+            source, endpoint, store, previous, &mut locked, failures, selects, required,
+        )?,
+        _ => stage_git(source, store, previous, &mut locked, failures, selects, required)?,
     }
     Ok(locked)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn stage_git(
     source: &Source,
     store: &Store,
     previous: Option<&LockedSource>,
     locked: &mut LockedSource,
     failures: &mut Failures,
+    selects: &dyn Fn(&str) -> bool,
+    required: &[String],
 ) -> Result<()> {
     let checkout = fetch::checkout(source, None)?;
     let discovery = skill::discover(&checkout.root, source.dir.as_deref())?;
 
     for found in &discovery.skills {
-        if !source.selects(&found.name) {
+        if !selects(&found.name) {
             continue;
         }
         let digest = store.insert(&found.tree)?;
@@ -123,10 +140,11 @@ fn stage_git(
         );
     }
 
-    retain_previous(source, &discovery, previous, locked, failures);
+    retain_previous(source, &discovery, previous, locked, failures, selects, required);
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn stage_well_known(
     source: &Source,
     endpoint: &str,
@@ -134,11 +152,13 @@ fn stage_well_known(
     previous: Option<&LockedSource>,
     locked: &mut LockedSource,
     failures: &mut Failures,
+    selects: &dyn Fn(&str) -> bool,
+    required: &[String],
 ) -> Result<()> {
     let index = fetch::well_known_index(endpoint)?;
     let mut discovery = Discovery::default();
 
-    for entry in index.iter().filter(|entry| source.selects(&entry.name)) {
+    for entry in index.iter().filter(|entry| selects(&entry.name)) {
         let fetched = fetch::archive_skill(endpoint, &entry.name, &entry.url, Some(&entry.digest))?;
         let mut found = skill::discover(&fetched.root, None)?;
         for skill in found.skills.drain(..) {
@@ -157,7 +177,7 @@ fn stage_well_known(
         discovery.invalid.extend(found.invalid);
     }
 
-    retain_previous(source, &discovery, previous, locked, failures);
+    retain_previous(source, &discovery, previous, locked, failures, selects, required);
     Ok(())
 }
 
@@ -168,9 +188,11 @@ fn retain_previous(
     previous: Option<&LockedSource>,
     locked: &mut LockedSource,
     failures: &mut Failures,
+    selects: &dyn Fn(&str) -> bool,
+    required: &[String],
 ) {
     for invalid in &discovery.invalid {
-        if !source.selects(&invalid.name) {
+        if !selects(&invalid.name) {
             continue;
         }
         failures.push(format!("{}:{}: {}", source.alias, invalid.name, invalid.reason));
@@ -179,7 +201,7 @@ fn retain_previous(
         }
     }
 
-    for selected in source.skills.iter().flatten() {
+    for selected in required {
         if locked.skills.contains_key(selected)
             || discovery.invalid.iter().any(|invalid| &invalid.name == selected)
         {

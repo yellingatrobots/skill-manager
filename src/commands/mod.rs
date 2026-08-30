@@ -1,4 +1,5 @@
 pub mod apply;
+pub mod edit;
 pub mod hydrate;
 pub mod plan;
 pub mod update;
