@@ -113,6 +113,13 @@ impl Tree {
     }
 }
 
+/// The digest of a byte stream, for archives fetched whole.
+pub fn sha256(bytes: &[u8]) -> Digest {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    Digest(format!("sha256:{}", hex(&hasher.finalize())))
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
