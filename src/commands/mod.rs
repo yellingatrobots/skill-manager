@@ -4,6 +4,7 @@ pub mod hydrate;
 pub mod info;
 pub mod plan;
 pub mod update;
+pub mod verify;
 #[cfg(test)]
 pub mod testing;
 
