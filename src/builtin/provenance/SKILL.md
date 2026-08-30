@@ -17,10 +17,10 @@ tool itself. Run:
 skill-manager info <alias>:<skill>
 ```
 
-for one skill, or `skill-manager info` for every deployed skill. Either form
-also reports where the manifest, lock, store, deployed tree, and targets live.
-Add `--json` for a machine-readable `{ "locations": {…}, "skills": […] }`
-object.
+for one skill, or `skill-manager info` for every deployed skill. Add `--full`
+for every provenance field plus where the manifest, lock, store, deployed tree,
+and targets live, or `--json` for a machine-readable
+`{ "locations": {…}, "skills": […] }` object.
 
 Do not infer origin from the skill body: third-party skills reference each
 other by bare, unnamespaced names, and those references are not rewritten.

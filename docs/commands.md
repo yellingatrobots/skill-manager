@@ -52,16 +52,15 @@ then invokes `apply` once. It does not remove sources. Removing one skill from
 a source that omits `skills` is an error because the manifest has no “all
 except” representation.
 
-## `info [<alias>:<skill>] [--json]`
+## `info [<alias>:<skill>] [--full] [--json]`
 
-Every run first reports where this machine keeps things: manifest, lock,
-store, deployed tree, the generation `current` points at, and each target.
-With no skill argument it then lists every deployed skill and concise
-provenance; with a namespaced name it reports one detailed provenance record.
-Local-path sources are derived from the manifest and current working tree even
-though they have no lock entry. Human output is concise; `--json` provides a
-machine-readable `{ "locations": {…}, "skills": […] }` object used by
-`sm:provenance`.
+Lists every deployed skill and concise provenance; a namespaced name narrows it
+to one. `--full` also reports where this machine keeps things — manifest, lock,
+store, deployed tree, the generation `current` points at, and each target — and
+every provenance field per skill. Local-path sources are derived from the
+manifest and current working tree even though they have no lock entry. `--json`
+always provides the complete machine-readable
+`{ "locations": {…}, "skills": […] }` object used by `sm:provenance`.
 
 ## `verify`
 

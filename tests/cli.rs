@@ -237,13 +237,31 @@ fn info_reports_provenance_as_text_and_json() {
 }
 
 #[test]
-fn info_reports_where_everything_lives() {
+fn info_lists_only_skills_until_full_is_asked_for() {
     let sandbox = Sandbox::new();
     sandbox.write_skill("codemode", "body\n");
     sandbox.write_manifest("version = 1\n[sources.me]\npath = \"~/etc/ai/skills\"\n");
     sandbox.run(&["apply"]);
 
     let listing = sandbox.run(&["info"]);
+    assert_eq!(code(&listing), 0, "{}", stderr(&listing));
+    let text = stdout(&listing);
+    assert!(text.contains("me:codemode"));
+    assert!(!text.contains(&sandbox.manifest().display().to_string()));
+    assert!(!text.contains("upstream_coordinate"));
+
+    let one = sandbox.run(&["info", "me:codemode"]);
+    assert_eq!(stdout(&one).lines().count(), 1);
+}
+
+#[test]
+fn info_full_reports_where_everything_lives_and_every_field() {
+    let sandbox = Sandbox::new();
+    sandbox.write_skill("codemode", "body\n");
+    sandbox.write_manifest("version = 1\n[sources.me]\npath = \"~/etc/ai/skills\"\n");
+    sandbox.run(&["apply"]);
+
+    let listing = sandbox.run(&["info", "--full"]);
 
     assert_eq!(code(&listing), 0, "{}", stderr(&listing));
     let text = stdout(&listing);
@@ -251,6 +269,7 @@ fn info_reports_where_everything_lives() {
     assert!(text.contains(".local/share/skill-manager/store"));
     assert!(text.contains(".claude/skills"));
     assert!(text.contains(".agents/skills"));
+    assert!(text.contains("upstream_coordinate"));
 
     let json = sandbox.run(&["info", "--json"]);
     let value: serde_json::Value = serde_json::from_str(&stdout(&json)).unwrap();

@@ -52,6 +52,9 @@ enum Command {
     Info {
         /// A namespaced `<alias>:<skill>`; omit to list everything.
         name: Option<String>,
+        /// Also report locations and every provenance field.
+        #[arg(long)]
+        full: bool,
         /// Machine-readable output.
         #[arg(long)]
         json: bool,
@@ -108,22 +111,22 @@ pub fn run(cli: Cli) -> Result<i32> {
             print_edit("removed", &report);
             Ok(exit_code(&report.failures))
         }
-        Command::Info { name, json } => {
+        Command::Info { name, full, json } => {
             let report = info::report(&paths, name.as_deref())?;
             if json {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&report).expect("the report serializes")
                 );
-            } else {
+            } else if full {
                 print!("{}", info::render_locations(&report.locations));
                 println!();
                 for record in &report.skills {
-                    if name.is_some() {
-                        print!("{}", info::render_detail(record));
-                    } else {
-                        println!("{}", info::render_line(record));
-                    }
+                    print!("{}", info::render_detail(record));
+                }
+            } else {
+                for record in &report.skills {
+                    println!("{}", info::render_line(record));
                 }
             }
             Ok(EXIT_OK)
