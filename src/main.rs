@@ -1,6 +1,7 @@
 mod error;
 mod frontmatter;
 mod fsx;
+mod generate;
 mod lock;
 mod manifest;
 mod paths;
