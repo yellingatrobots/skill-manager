@@ -20,6 +20,9 @@ pub enum Error {
 
     #[error("invalid manifest: {0}")]
     Manifest(String),
+
+    #[error("invalid lock: {0}")]
+    Lock(String),
 }
 
 impl Error {
