@@ -29,6 +29,15 @@ pub enum Error {
 
     #[error("store entry {0} is missing; run `skill-manager hydrate`")]
     MissingStoreEntry(String),
+
+    #[error("{0}")]
+    Archive(String),
+
+    #[error("{0}")]
+    Network(String),
+
+    #[error("{0}")]
+    Git(String),
 }
 
 impl Error {

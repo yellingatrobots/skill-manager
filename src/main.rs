@@ -1,3 +1,4 @@
+mod archive;
 mod deploy;
 mod error;
 mod frontmatter;
