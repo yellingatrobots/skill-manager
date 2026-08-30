@@ -1,5 +1,6 @@
 pub mod apply;
 pub mod plan;
+pub mod update;
 #[cfg(test)]
 pub mod testing;
 

@@ -75,3 +75,41 @@ pub fn lock_toml(
     }
     out
 }
+
+pub fn skill_text(name: &str, body: &str) -> String {
+    format!("---\nname: {name}\ndescription: does {name}\n---\n{body}")
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .expect("git is available in tests");
+    assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+}
+
+/// A real repository on disk, used as a git source URL.
+pub fn git_origin(files: &[(&str, &str)]) -> TempDir {
+    let dir = TempDir::new().unwrap();
+    git(dir.path(), &["init", "--quiet", "--initial-branch", "main"]);
+    git(dir.path(), &["config", "user.email", "test@example.test"]);
+    git(dir.path(), &["config", "user.name", "Test"]);
+    git_commit(&dir, files);
+    dir
+}
+
+pub fn git_commit(origin: &TempDir, files: &[(&str, &str)]) {
+    for (path, contents) in files {
+        let full = origin.path().join(path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(full, contents).unwrap();
+    }
+    git(origin.path(), &["add", "."]);
+    git(origin.path(), &["commit", "--quiet", "-m", "change", "--allow-empty"]);
+}
+
+pub fn git_tag(origin: &TempDir, tag: &str) {
+    git(origin.path(), &["tag", tag]);
+}
