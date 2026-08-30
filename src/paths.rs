@@ -11,6 +11,8 @@ pub struct Paths {
     pub manifest: PathBuf,
     pub lock: PathBuf,
     pub store: PathBuf,
+    /// The build directory: a target entry is ours iff it is a symlink into it.
+    pub deployed: PathBuf,
     pub generations: PathBuf,
     pub current: PathBuf,
     pub targets: Vec<PathBuf>,
@@ -33,6 +35,7 @@ impl Paths {
             manifest: home.join("etc/ai/skills.toml"),
             lock: home.join("etc/ai/skills.lock"),
             store: data_home.join("skill-manager/store"),
+            deployed: deployed.clone(),
             generations: deployed.join("generations"),
             current: deployed.join("current"),
             targets: TARGET_DIRECTORIES.iter().map(|target| home.join(target)).collect(),
@@ -60,6 +63,7 @@ mod tests {
         assert_eq!(paths.lock, Path::new("/home/t/etc/ai/skills.lock"));
         assert_eq!(paths.store, Path::new("/home/t/.local/share/skill-manager/store"));
         assert_eq!(paths.current, Path::new("/home/t/.local/share/skill-manager/deployed/current"));
+        assert_eq!(paths.deployed, Path::new("/home/t/.local/share/skill-manager/deployed"));
         assert_eq!(
             paths.targets,
             [Path::new("/home/t/.claude/skills"), Path::new("/home/t/.agents/skills")]

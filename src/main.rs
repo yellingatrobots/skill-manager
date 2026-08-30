@@ -1,3 +1,4 @@
+mod deploy;
 mod error;
 mod frontmatter;
 mod fsx;
