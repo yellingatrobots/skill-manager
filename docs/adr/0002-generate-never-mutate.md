@@ -21,3 +21,19 @@ working in both harnesses but is rejected — it must duplicate the
 `description` verbatim anyway, since that is the trigger text, so it buys
 nothing and costs an extra file read plus a model-compliance gamble on every
 invocation.
+
+## Consequences
+
+Generated frontmatter carries `source_alias`, `upstream_name`, `upstream_url`,
+and `upstream_coordinate`. It carries no deployment timestamp: generated
+output must remain a pure function of manifest plus lock plus store.
+
+For a local-path source, `upstream_url` preserves the configured manifest path
+and `upstream_coordinate` is the current semantic content digest. `info` may
+also display the resolved absolute path at runtime; the local source remains
+absent from the lock.
+
+A built-in `sm:provenance` skill, embedded in the binary and deployed on every
+`apply`, tells harnesses to use `skill-manager info` for authoritative origin
+information. `sm` is a reserved source alias and cannot appear in the
+manifest.

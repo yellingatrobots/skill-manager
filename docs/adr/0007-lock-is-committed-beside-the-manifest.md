@@ -9,3 +9,7 @@ declared intent in the config repo and resolved reality in
 
 Viable only because `apply` does not write the lock (see ADR-0005); if it
 did, a committed lock would mean a permanently dirty config repo.
+
+The file is `~/etc/ai/skills.lock`, encoded as TOML with top-level
+`version = 1`. Sources and skills are serialized in deterministic key order,
+and no timestamps appear in the file.
