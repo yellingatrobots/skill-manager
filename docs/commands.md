@@ -54,11 +54,14 @@ except” representation.
 
 ## `info [<alias>:<skill>] [--json]`
 
-With no skill argument, lists every deployed skill and concise provenance.
-With a namespaced name, reports one detailed provenance record. Local-path
-sources are derived from the manifest and current working tree even though
-they have no lock entry. Human output is concise; `--json` provides a stable
-machine-readable representation used by `sm:provenance`.
+Every run first reports where this machine keeps things: manifest, lock,
+store, deployed tree, the generation `current` points at, and each target.
+With no skill argument it then lists every deployed skill and concise
+provenance; with a namespaced name it reports one detailed provenance record.
+Local-path sources are derived from the manifest and current working tree even
+though they have no lock entry. Human output is concise; `--json` provides a
+machine-readable `{ "locations": {…}, "skills": […] }` object used by
+`sm:provenance`.
 
 ## `verify`
 

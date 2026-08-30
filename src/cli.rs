@@ -109,19 +109,21 @@ pub fn run(cli: Cli) -> Result<i32> {
             Ok(exit_code(&report.failures))
         }
         Command::Info { name, json } => {
-            let records = info::run(&paths, name.as_deref())?;
+            let report = info::report(&paths, name.as_deref())?;
             if json {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&records).expect("records serialize")
+                    serde_json::to_string_pretty(&report).expect("the report serializes")
                 );
-            } else if name.is_some() {
-                for record in &records {
-                    print!("{}", info::render_detail(record));
-                }
             } else {
-                for record in &records {
-                    println!("{}", info::render_line(record));
+                print!("{}", info::render_locations(&report.locations));
+                println!();
+                for record in &report.skills {
+                    if name.is_some() {
+                        print!("{}", info::render_detail(record));
+                    } else {
+                        println!("{}", info::render_line(record));
+                    }
                 }
             }
             Ok(EXIT_OK)

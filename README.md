@@ -43,7 +43,7 @@ skill-manager apply             # deploy from manifest + lock + store, offline
 skill-manager hydrate           # fetch exactly what the lock pins (fresh machine)
 skill-manager add mp:wizard     # select a skill, then deploy
 skill-manager remove mp:wizard  # deselect a skill, then deploy
-skill-manager info [mp:tdd]     # where a deployed skill came from (--json)
+skill-manager info [mp:tdd]     # where everything lives and where skills came from (--json)
 skill-manager verify            # read-only convergence check
 ```
 

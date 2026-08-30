@@ -30,6 +30,48 @@ pub struct Provenance {
     pub deployed_path: String,
 }
 
+/// Where this machine keeps every file the tool reads or writes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Locations {
+    pub manifest: String,
+    pub lock: String,
+    pub store: String,
+    pub deployed: String,
+    /// The generation `current` points at, absent when nothing is deployed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation: Option<String>,
+    pub targets: Vec<String>,
+}
+
+/// What `info` reports: where things live, and what is deployed.
+#[derive(Debug, Serialize)]
+pub struct Report {
+    pub locations: Locations,
+    pub skills: Vec<Provenance>,
+}
+
+pub fn report(paths: &Paths, wanted: Option<&str>) -> Result<Report> {
+    Ok(Report {
+        locations: locations(paths),
+        skills: run(paths, wanted)?,
+    })
+}
+
+fn locations(paths: &Paths) -> Locations {
+    Locations {
+        manifest: display(&paths.manifest),
+        lock: display(&paths.lock),
+        store: display(&paths.store),
+        deployed: display(&paths.deployed),
+        generation: fs::read_link(&paths.current).ok().map(|to| display(&to)),
+        targets: paths.targets.iter().map(display).collect(),
+    }
+}
+
+fn display(path: impl AsRef<std::path::Path>) -> String {
+    path.as_ref().display().to_string()
+}
+
 pub fn run(paths: &Paths, wanted: Option<&str>) -> Result<Vec<Provenance>> {
     let all = collect(paths)?;
     match wanted {
@@ -94,6 +136,22 @@ fn collect(paths: &Paths) -> Result<Vec<Provenance>> {
 
 fn field(doc: &SkillDoc, key: &str) -> Option<String> {
     doc.frontmatter.get(key).map(str::to_string)
+}
+
+pub fn render_locations(locations: &Locations) -> String {
+    let mut out = String::new();
+    let mut line = |label: &str, value: &str| out.push_str(&format!("{label:<12}{value}\n"));
+    line("manifest", &locations.manifest);
+    line("lock", &locations.lock);
+    line("store", &locations.store);
+    line("deployed", &locations.deployed);
+    if let Some(generation) = &locations.generation {
+        line("generation", generation);
+    }
+    for target in &locations.targets {
+        line("target", target);
+    }
+    out
 }
 
 /// The concise human listing.
@@ -253,6 +311,34 @@ mod tests {
                 .unwrap()
                 .contains("me:codemode")
         );
+    }
+
+    #[test]
+    fn reports_where_the_manifest_lock_store_and_targets_live() {
+        let home = home();
+        write_manifest(&home, "version = 1\n");
+        apply::run(&home.paths).unwrap();
+
+        let report = report(&home.paths, None).unwrap();
+        let locations = &report.locations;
+
+        assert_eq!(locations.manifest, display(&home.paths.manifest));
+        assert_eq!(locations.lock, display(&home.paths.lock));
+        assert_eq!(locations.store, display(&home.paths.store));
+        assert_eq!(locations.deployed, display(&home.paths.deployed));
+        assert_eq!(
+            locations.generation,
+            Some(display(std::fs::read_link(&home.paths.current).unwrap()))
+        );
+        assert_eq!(
+            locations.targets,
+            home.paths.targets.iter().map(display).collect::<Vec<_>>()
+        );
+        assert!(report.skills.iter().any(|s| s.name == "sm:provenance"));
+
+        let text = render_locations(locations);
+        assert!(text.contains(&format!("manifest    {}", locations.manifest)));
+        assert!(text.contains(&format!("target      {}", locations.targets[0])));
     }
 
     #[test]

@@ -225,13 +225,44 @@ fn info_reports_provenance_as_text_and_json() {
     let detail = sandbox.run(&["info", "me:codemode", "--json"]);
     assert_eq!(code(&detail), 0, "{}", stderr(&detail));
     let json: serde_json::Value = serde_json::from_str(&stdout(&detail)).unwrap();
-    assert_eq!(json[0]["name"], "me:codemode");
-    assert_eq!(json[0]["source_kind"], "path");
+    let record = &json["skills"][0];
+    assert_eq!(record["name"], "me:codemode");
+    assert_eq!(record["source_kind"], "path");
     assert!(
-        json[0]["upstream_coordinate"]
+        record["upstream_coordinate"]
             .as_str()
             .unwrap()
             .starts_with("sha256:")
+    );
+}
+
+#[test]
+fn info_reports_where_everything_lives() {
+    let sandbox = Sandbox::new();
+    sandbox.write_skill("codemode", "body\n");
+    sandbox.write_manifest("version = 1\n[sources.me]\npath = \"~/etc/ai/skills\"\n");
+    sandbox.run(&["apply"]);
+
+    let listing = sandbox.run(&["info"]);
+
+    assert_eq!(code(&listing), 0, "{}", stderr(&listing));
+    let text = stdout(&listing);
+    assert!(text.contains(&sandbox.manifest().display().to_string()));
+    assert!(text.contains(".local/share/skill-manager/store"));
+    assert!(text.contains(".claude/skills"));
+    assert!(text.contains(".agents/skills"));
+
+    let json = sandbox.run(&["info", "--json"]);
+    let value: serde_json::Value = serde_json::from_str(&stdout(&json)).unwrap();
+    assert_eq!(
+        value["locations"]["manifest"],
+        sandbox.manifest().display().to_string()
+    );
+    assert!(
+        value["locations"]["generation"]
+            .as_str()
+            .unwrap()
+            .contains("generations/")
     );
 }
 
