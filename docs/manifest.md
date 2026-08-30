@@ -1,6 +1,11 @@
 # Manifest
 
-The manifest is TOML at `~/etc/ai/skills.toml`.
+The manifest is TOML at `$XDG_CONFIG_HOME/skill-manager/skills.toml`,
+defaulting to `~/.config/skill-manager/skills.toml`.
+
+Any command run without a manifest writes a template there — `version = 1`
+with one commented example per transport — reports that it did so, and exits
+without running. Nothing else is created or deployed on that run.
 
 ```toml
 version = 1

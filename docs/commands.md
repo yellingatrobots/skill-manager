@@ -16,7 +16,7 @@ skills deploy, and the command exits non-zero.
 ## `update [<alias>] [--no-apply]`
 
 Resolves and fetches every remote source, or one source when an alias is
-provided, then atomically replaces `~/etc/ai/skills.lock`. Unpinned sources
+provided, then atomically replaces the lock beside the manifest. Unpinned sources
 move to the current tip of declared intent; pinned sources resolve to the same
 coordinate. Successful updates invoke `apply` unless `--no-apply` is passed.
 

@@ -1,6 +1,7 @@
 # Lock
 
-The committed lock is deterministic TOML at `~/etc/ai/skills.lock`.
+The committed lock is deterministic TOML at
+`$XDG_CONFIG_HOME/skill-manager/skills.lock`, beside the manifest.
 
 ```toml
 version = 1

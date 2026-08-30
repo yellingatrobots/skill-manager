@@ -24,8 +24,9 @@ both the deployed directory name and the generated frontmatter `name:`.
 _Avoid_: prefixed name, qualified name
 
 **Manifest**:
-The declaration of intent, at `~/etc/ai/skills.toml`. The only file a human
-edits.
+The declaration of intent, at `$XDG_CONFIG_HOME/skill-manager/skills.toml`
+(`~/.config/skill-manager/skills.toml` by default). The only file a human
+edits, and the tool writes a commented template there on first run.
 _Avoid_: config, skills list
 
 **Lock**:

@@ -19,7 +19,9 @@ it in.
 
 ## Use
 
-Declare intent in `~/etc/ai/skills.toml`:
+The first run writes a commented template to
+`$XDG_CONFIG_HOME/skill-manager/skills.toml` — `~/.config/skill-manager/skills.toml`
+by default — and says so instead of running the command. Declare intent there:
 
 ```toml
 version = 1
@@ -51,8 +53,8 @@ Exit codes: `0` clean, `1` reported failures, `2` aborted.
 
 | Path | What |
 | --- | --- |
-| `~/etc/ai/skills.toml` | the manifest — the only file a human edits |
-| `~/etc/ai/skills.lock` | the lock, committed beside the manifest |
+| `~/.config/skill-manager/skills.toml` | the manifest — the only file a human edits |
+| `~/.config/skill-manager/skills.lock` | the lock, committed beside the manifest |
 | `~/.local/share/skill-manager/store` | immutable content-addressed upstream content |
 | `~/.local/share/skill-manager/deployed` | generated trees and the `current` generation |
 | `~/.claude/skills`, `~/.agents/skills` | targets, symlinked through `current` |

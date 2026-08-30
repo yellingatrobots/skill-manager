@@ -1,4 +1,5 @@
-//! The lock at `~/etc/ai/skills.lock` — the record of resolution (ADR-0007).
+//! The lock at `$XDG_CONFIG_HOME/skill-manager/skills.lock` — the record of
+//! resolution (ADR-0007).
 
 use crate::error::{Error, IoContext, Result};
 use crate::fsx;
