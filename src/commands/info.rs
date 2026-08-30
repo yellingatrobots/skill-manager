@@ -98,8 +98,15 @@ fn field(doc: &SkillDoc, key: &str) -> Option<String> {
 
 /// The concise human listing.
 pub fn render_line(record: &Provenance) -> String {
-    let coordinate = short(&record.upstream_coordinate);
-    format!("{}  {}  {coordinate}", record.name, record.upstream_url)
+    if record.upstream_url.is_empty() {
+        return format!("{}  built in", record.name);
+    }
+    format!(
+        "{}  {}  {}",
+        record.name,
+        record.upstream_url,
+        short(&record.upstream_coordinate)
+    )
 }
 
 pub fn render_detail(record: &Provenance) -> String {
@@ -288,6 +295,8 @@ mod tests {
 
         let record = &run(&home.paths, Some("me:codemode")).unwrap()[0];
 
+        let builtin = &run(&home.paths, Some("sm:provenance")).unwrap()[0];
+        assert_eq!(render_line(builtin), "sm:provenance  built in");
         assert_eq!(render_line(record).lines().count(), 1);
         assert!(render_line(record).starts_with("me:codemode  "));
         assert!(render_detail(record).contains("upstream_coordinate sha256:"));

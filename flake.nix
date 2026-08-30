@@ -21,6 +21,9 @@
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           nativeBuildInputs = [ pkgs.makeWrapper ];
+          # The git-backed source tests shell out to the real client.
+          nativeCheckInputs = [ pkgs.git ];
+          preCheck = "export HOME=$(mktemp -d)";
           postInstall = ''
             wrapProgram $out/bin/skill-manager \
               --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.git ]}
