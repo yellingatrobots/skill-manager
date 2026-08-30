@@ -17,6 +17,9 @@ pub enum Error {
 
     #[error("{0}: path is not valid UTF-8")]
     NonUtf8Path(PathBuf),
+
+    #[error("invalid manifest: {0}")]
+    Manifest(String),
 }
 
 impl Error {
