@@ -41,7 +41,7 @@ pub fn run(paths: &Paths) -> Result<VerifyReport> {
         .chain([format!("{}:provenance", generate::BUILTIN_ALIAS)])
         .collect();
 
-    let expected = expected_generation(paths, &plan.deployables)?;
+    let expected = expected_generation(&plan.deployables)?;
     verify_current(paths, &expected, &mut problems)?;
     verify_targets(paths, &expected_names, &mut problems)?;
     verify_generations(paths, &expected, &mut problems)?;
@@ -74,12 +74,11 @@ fn verify_store(manifest: &Manifest, lock: &Lock, store: &Store, problems: &mut 
 }
 
 /// What `apply` would produce right now, built in a temporary directory.
-fn expected_generation(paths: &Paths, deployables: &[generate::Deployable]) -> Result<Digest> {
+fn expected_generation(deployables: &[generate::Deployable]) -> Result<Digest> {
     let temp = tempfile::TempDir::new_in(std::env::temp_dir())
         .map_err(|error| Error::io(std::env::temp_dir(), error))?;
     let root = temp.path().join("generation");
     generate::build(&root, deployables)?;
-    let _ = paths;
     Tree::read(&root)?.digest()
 }
 

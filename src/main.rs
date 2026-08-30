@@ -1,4 +1,5 @@
 mod archive;
+mod cli;
 mod commands;
 mod deploy;
 mod error;
@@ -17,4 +18,15 @@ mod store;
 mod tree;
 mod wellknown;
 
-fn main() {}
+use clap::Parser;
+
+fn main() -> std::process::ExitCode {
+    let code = match cli::run(cli::Cli::parse()) {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("skill-manager: {error}");
+            cli::EXIT_ABORTED
+        }
+    };
+    std::process::ExitCode::from(code as u8)
+}
