@@ -23,6 +23,12 @@ pub enum Error {
 
     #[error("invalid lock: {0}")]
     Lock(String),
+
+    #[error("{0}")]
+    Configuration(String),
+
+    #[error("store entry {0} is missing; run `skill-manager hydrate`")]
+    MissingStoreEntry(String),
 }
 
 impl Error {
