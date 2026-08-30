@@ -288,6 +288,28 @@ mod tests {
     }
 
     #[test]
+    fn add_writes_through_a_symlinked_manifest() {
+        let home = local_home(&["codemode", "tdd"], "\"codemode\"");
+        let repo = home.path().join("etc/skills.toml");
+        fs::rename(&home.paths.manifest, &repo).unwrap();
+        std::os::unix::fs::symlink(&repo, &home.paths.manifest).unwrap();
+
+        add(&home.paths, &["me:tdd".to_string()]).unwrap();
+
+        assert!(
+            fs::symlink_metadata(&home.paths.manifest)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            fs::read_to_string(&repo)
+                .unwrap()
+                .contains(r#"skills = ["codemode", "tdd"]"#)
+        );
+    }
+
+    #[test]
     fn add_leaves_both_files_unchanged_when_a_skill_does_not_exist() {
         let home = local_home(&["codemode"], "\"codemode\"");
         let before = fs::read_to_string(&home.paths.manifest).unwrap();

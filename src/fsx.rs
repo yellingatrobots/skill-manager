@@ -1,12 +1,16 @@
 //! Filesystem operations that must not be observed half-done.
 
-use crate::error::{IoContext, Result};
+use crate::error::{Error, IoContext, Result};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Matches the kernel's own limit on a symlink chain.
+const MAX_SYMLINK_HOPS: usize = 40;
 
 /// Writes `contents` to a temporary sibling, then renames it over `path`.
 pub fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
+    let path = &resolve_symlinks(path)?;
     let parent = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(parent).at(parent)?;
     let temporary = tempfile::NamedTempFile::new_in(parent).at(parent)?;
@@ -15,6 +19,28 @@ pub fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
         .persist(path)
         .map_err(|error| crate::error::Error::io(path, error.error))?;
     Ok(())
+}
+
+/// Follows a symlink chain to the path that holds the content.
+///
+/// Renaming over a link would replace it: a manifest linked into a dotfiles repo
+/// would lose the link and strand the edit outside the repo.
+fn resolve_symlinks(path: &Path) -> Result<PathBuf> {
+    let mut resolved = path.to_path_buf();
+    for _ in 0..MAX_SYMLINK_HOPS {
+        let is_symlink =
+            fs::symlink_metadata(&resolved).is_ok_and(|metadata| metadata.file_type().is_symlink());
+        if !is_symlink {
+            return Ok(resolved);
+        }
+        let target = fs::read_link(&resolved).at(&resolved)?;
+        let parent = resolved.parent().unwrap_or(Path::new("."));
+        resolved = parent.join(target);
+    }
+    Err(Error::Configuration(format!(
+        "{}: too many levels of symbolic links",
+        path.display()
+    )))
 }
 
 /// Replaces `link` with a symlink to `target` without an interval where it is absent.
@@ -86,6 +112,55 @@ mod tests {
         write_atomic(&path, b"first").unwrap();
         write_atomic(&path, b"second").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "second");
+    }
+
+    #[test]
+    fn write_atomic_writes_through_a_symlink() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("repo/skills.toml");
+        write_atomic(&target, b"first").unwrap();
+        let hop = dir.path().join("hop");
+        let link = dir.path().join("skills.toml");
+        std::os::unix::fs::symlink(&target, &hop).unwrap();
+        std::os::unix::fs::symlink("hop", &link).unwrap();
+
+        write_atomic(&link, b"second").unwrap();
+
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read_to_string(&target).unwrap(), "second");
+    }
+
+    #[test]
+    fn write_atomic_creates_the_target_of_a_dangling_symlink() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("repo/skills.toml");
+        let link = dir.path().join("skills.toml");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        write_atomic(&link, b"scaffold").unwrap();
+
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read_to_string(&target).unwrap(), "scaffold");
+    }
+
+    #[test]
+    fn write_atomic_refuses_a_symlink_loop() {
+        let dir = TempDir::new().unwrap();
+        let (a, b) = (dir.path().join("a"), dir.path().join("b"));
+        std::os::unix::fs::symlink(&b, &a).unwrap();
+        std::os::unix::fs::symlink(&a, &b).unwrap();
+
+        assert!(write_atomic(&a, b"never").is_err());
     }
 
     #[test]
