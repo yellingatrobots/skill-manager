@@ -10,6 +10,7 @@ mod git;
 mod http;
 mod lock;
 mod manifest;
+mod manifest_edit;
 mod paths;
 mod skill;
 mod store;
