@@ -1,4 +1,5 @@
 mod archive;
+mod commands;
 mod deploy;
 mod error;
 mod fetch;

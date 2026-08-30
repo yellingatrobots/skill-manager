@@ -38,6 +38,9 @@ pub enum Error {
 
     #[error("{0}")]
     Git(String),
+
+    #[error("{0}")]
+    Drift(String),
 }
 
 impl Error {
