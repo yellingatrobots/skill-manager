@@ -1,6 +1,7 @@
 pub mod apply;
 pub mod edit;
 pub mod hydrate;
+pub mod info;
 pub mod plan;
 pub mod update;
 #[cfg(test)]
