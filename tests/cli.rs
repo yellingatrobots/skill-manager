@@ -24,13 +24,18 @@ impl Sandbox {
         Command::new(env!("CARGO_BIN_EXE_skill-manager"))
             .args(args)
             .env("HOME", self.path())
+            .env("XDG_CONFIG_HOME", self.path().join(".config"))
             .env("XDG_DATA_HOME", self.path().join(".local/share"))
             .output()
             .expect("the binary runs")
     }
 
+    fn manifest(&self) -> PathBuf {
+        self.path().join(".config/skill-manager/skills.toml")
+    }
+
     fn write_manifest(&self, contents: &str) {
-        let path = self.path().join("etc/ai/skills.toml");
+        let path = self.manifest();
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(
             path,
@@ -223,7 +228,7 @@ fn add_and_remove_edit_the_manifest_in_place() {
 
     let added = sandbox.run(&["add", "me:tdd"]);
     assert_eq!(code(&added), 0, "{}", stderr(&added));
-    let manifest = fs::read_to_string(sandbox.path().join("etc/ai/skills.toml")).unwrap();
+    let manifest = fs::read_to_string(sandbox.manifest()).unwrap();
     assert!(manifest.contains("# mine"));
     assert!(manifest.contains(r#"skills = ["codemode", "tdd"]"#));
     assert!(sandbox.target("me:tdd").exists());

@@ -23,17 +23,21 @@ impl Paths {
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .ok_or_else(|| Error::Configuration("HOME is not set".to_string()))?;
+        let config = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"));
         let data = std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".local/share"));
-        Ok(Paths::new(&home, &data))
+        Ok(Paths::new(&home, &config, &data))
     }
 
-    pub fn new(home: &Path, data_home: &Path) -> Self {
+    pub fn new(home: &Path, config_home: &Path, data_home: &Path) -> Self {
         let deployed = data_home.join("skill-manager/deployed");
+        let config = config_home.join("skill-manager");
         Paths {
-            manifest: home.join("etc/ai/skills.toml"),
-            lock: home.join("etc/ai/skills.lock"),
+            manifest: config.join("skills.toml"),
+            lock: config.join("skills.lock"),
             store: data_home.join("skill-manager/store"),
             deployed: deployed.clone(),
             generations: deployed.join("generations"),
@@ -48,7 +52,7 @@ impl Paths {
     /// Everything under one root.
     #[cfg(test)]
     pub fn rooted_at(root: &Path) -> Self {
-        Paths::new(root, &root.join(".local/share"))
+        Paths::new(root, &root.join(".config"), &root.join(".local/share"))
     }
 
     pub fn generation(&self, digest: &crate::tree::Digest) -> PathBuf {
@@ -62,9 +66,19 @@ mod tests {
 
     #[test]
     fn resolves_the_documented_locations() {
-        let paths = Paths::new(Path::new("/home/t"), Path::new("/home/t/.local/share"));
-        assert_eq!(paths.manifest, Path::new("/home/t/etc/ai/skills.toml"));
-        assert_eq!(paths.lock, Path::new("/home/t/etc/ai/skills.lock"));
+        let paths = Paths::new(
+            Path::new("/home/t"),
+            Path::new("/home/t/.config"),
+            Path::new("/home/t/.local/share"),
+        );
+        assert_eq!(
+            paths.manifest,
+            Path::new("/home/t/.config/skill-manager/skills.toml")
+        );
+        assert_eq!(
+            paths.lock,
+            Path::new("/home/t/.config/skill-manager/skills.lock")
+        );
         assert_eq!(
             paths.store,
             Path::new("/home/t/.local/share/skill-manager/store")
@@ -87,9 +101,12 @@ mod tests {
     }
 
     #[test]
-    fn honours_xdg_data_home() {
-        let paths = Paths::new(Path::new("/home/t"), Path::new("/data"));
+    fn honours_the_xdg_base_directories() {
+        let paths = Paths::new(Path::new("/home/t"), Path::new("/config"), Path::new("/data"));
         assert_eq!(paths.store, Path::new("/data/skill-manager/store"));
-        assert_eq!(paths.manifest, Path::new("/home/t/etc/ai/skills.toml"));
+        assert_eq!(
+            paths.manifest,
+            Path::new("/config/skill-manager/skills.toml")
+        );
     }
 }
