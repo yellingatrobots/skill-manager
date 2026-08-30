@@ -1,6 +1,7 @@
 mod archive;
 mod deploy;
 mod error;
+mod fetch;
 mod frontmatter;
 mod fsx;
 mod generate;
