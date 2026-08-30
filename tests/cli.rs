@@ -112,6 +112,24 @@ fn git_origin(files: &[(&str, &str)]) -> TempDir {
 }
 
 #[test]
+fn the_first_run_scaffolds_a_manifest_instead_of_running_the_command() {
+    let sandbox = Sandbox::new();
+
+    let first = sandbox.run(&["apply"]);
+
+    assert_eq!(code(&first), 0, "{}", stderr(&first));
+    assert!(stdout(&first).contains(".config/skill-manager/skills.toml"));
+    assert!(stdout(&first).contains("skill-manager add"));
+    let manifest = fs::read_to_string(sandbox.manifest()).unwrap();
+    assert!(manifest.contains("# [sources.mp]"));
+
+    let second = sandbox.run(&["apply"]);
+
+    assert_eq!(code(&second), 0, "{}", stderr(&second));
+    assert!(stdout(&second).contains("deployed"));
+}
+
+#[test]
 fn apply_deploys_a_local_source_into_both_targets() {
     let sandbox = Sandbox::new();
     sandbox.write_skill("codemode", "principles\n");

@@ -102,7 +102,11 @@ mod tests {
 
     #[test]
     fn honours_the_xdg_base_directories() {
-        let paths = Paths::new(Path::new("/home/t"), Path::new("/config"), Path::new("/data"));
+        let paths = Paths::new(
+            Path::new("/home/t"),
+            Path::new("/config"),
+            Path::new("/data"),
+        );
         assert_eq!(paths.store, Path::new("/data/skill-manager/store"));
         assert_eq!(
             paths.manifest,

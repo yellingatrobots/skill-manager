@@ -2,6 +2,7 @@
 
 use crate::commands::{apply, edit, hydrate, info, update, verify};
 use crate::error::{Failures, Result};
+use crate::manifest;
 use crate::paths::Paths;
 use clap::{Parser, Subcommand};
 
@@ -67,6 +68,13 @@ pub const EXIT_ABORTED: i32 = 2;
 
 pub fn run(cli: Cli) -> Result<i32> {
     let paths = Paths::from_env()?;
+    if manifest::scaffold(&paths.manifest)? {
+        println!("created {}", paths.manifest.display());
+        println!(
+            "edit it to declare a source, or run `skill-manager add <alias>:<skill>` to select a skill"
+        );
+        return Ok(EXIT_OK);
+    }
     match cli.command {
         Command::Apply => {
             let report = apply::run(&paths)?;

@@ -1,4 +1,5 @@
-//! The manifest at `~/etc/ai/skills.toml` — the only file a human edits.
+//! The manifest at `$XDG_CONFIG_HOME/skill-manager/skills.toml` — the only
+//! file a human edits.
 
 use crate::error::{Error, Result};
 use serde::Deserialize;
@@ -8,6 +9,38 @@ use std::path::{Path, PathBuf};
 /// Reserved for the built-in `sm:provenance` skill (ADR-0002).
 pub const RESERVED_ALIAS: &str = "sm";
 pub const MANIFEST_VERSION: i64 = 1;
+
+/// Written on first run: a valid manifest whose every source is a commented example.
+pub const TEMPLATE: &str = r#"version = 1
+
+# Each [sources.<alias>] table declares one upstream, and the alias namespaces
+# every skill it deploys. Uncomment an example and adjust it, or run
+# `skill-manager add <alias>:<skill>` to select a skill under a source.
+
+# [sources.mp]
+# github = "mattpocock/skills"
+# ref = "main"
+# skills = ["handoff", "tdd"]
+
+# [sources.kepano]
+# git = "git@github.com:kepano/obsidian-skills.git"
+# dir = "skills"
+
+# [sources.likec4]
+# well_known = "https://likec4.dev/"
+
+# [sources.me]
+# path = "~/etc/ai/skills"
+"#;
+
+/// Writes the template when no manifest exists. Reports whether it wrote one.
+pub fn scaffold(path: &Path) -> Result<bool> {
+    if path.exists() {
+        return Ok(false);
+    }
+    crate::fsx::write_atomic(path, TEMPLATE.as_bytes())?;
+    Ok(true)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Transport {
@@ -302,6 +335,27 @@ mod tests {
 
     fn error(text: &str) -> String {
         Manifest::parse(text).unwrap_err().to_string()
+    }
+
+    #[test]
+    fn the_template_parses_as_a_manifest_that_declares_nothing() {
+        let manifest = parse(TEMPLATE);
+        assert!(manifest.sources.is_empty());
+        assert!(TEMPLATE.contains("# [sources.mp]"));
+        assert!(TEMPLATE.contains("# github = "));
+    }
+
+    #[test]
+    fn scaffolding_writes_the_template_only_when_the_manifest_is_absent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("skill-manager/skills.toml");
+
+        assert!(scaffold(&path).unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), TEMPLATE);
+
+        std::fs::write(&path, "version = 1\n").unwrap();
+        assert!(!scaffold(&path).unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "version = 1\n");
     }
 
     #[test]
