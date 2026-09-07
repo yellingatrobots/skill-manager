@@ -140,14 +140,14 @@ fn apply_deploys_a_local_source_into_both_targets() {
     assert_eq!(code(&output), 0, "{}", stderr(&output));
     assert!(stdout(&output).contains("deployed 1 skill(s)"));
     for target in [".claude/skills", ".agents/skills"] {
-        let deployed = sandbox.path().join(target).join("me:codemode/SKILL.md");
+        let deployed = sandbox.path().join(target).join("me-codemode/SKILL.md");
         assert!(
             fs::read_to_string(deployed)
                 .unwrap()
-                .contains("name: me:codemode\n")
+                .contains("name: me-codemode\n")
         );
     }
-    assert!(sandbox.target("sm:provenance").exists());
+    assert!(sandbox.target("sm-provenance").exists());
 }
 
 #[test]
@@ -184,8 +184,8 @@ fn an_invalid_skill_is_skipped_and_the_command_exits_non_zero() {
     let output = sandbox.run(&["apply"]);
 
     assert_eq!(code(&output), 1);
-    assert!(stderr(&output).contains("me:bad"));
-    assert!(sandbox.target("me:good").exists());
+    assert!(stderr(&output).contains("me-bad"));
+    assert!(sandbox.target("me-good").exists());
 }
 
 #[test]
@@ -199,14 +199,14 @@ fn update_then_hydrate_rebuilds_the_store_from_the_lock() {
 
     let updated = sandbox.run(&["update"]);
     assert_eq!(code(&updated), 0, "{}", stderr(&updated));
-    assert!(sandbox.target("mp:handoff").exists());
+    assert!(sandbox.target("mp-handoff").exists());
 
     let store = sandbox.path().join(".local/share/skill-manager/store");
     remove_read_only_tree(&store);
     let hydrated = sandbox.run(&["hydrate"]);
 
     assert_eq!(code(&hydrated), 0, "{}", stderr(&hydrated));
-    assert!(stdout(&hydrated).contains("mp:handoff"));
+    assert!(stdout(&hydrated).contains("mp-handoff"));
     assert!(store.exists());
 }
 
@@ -219,14 +219,14 @@ fn info_reports_provenance_as_text_and_json() {
 
     let listing = sandbox.run(&["info"]);
     assert_eq!(code(&listing), 0);
-    assert!(stdout(&listing).contains("me:codemode"));
-    assert!(stdout(&listing).contains("sm:provenance"));
+    assert!(stdout(&listing).contains("me-codemode"));
+    assert!(stdout(&listing).contains("sm-provenance"));
 
-    let detail = sandbox.run(&["info", "me:codemode", "--json"]);
+    let detail = sandbox.run(&["info", "me-codemode", "--json"]);
     assert_eq!(code(&detail), 0, "{}", stderr(&detail));
     let json: serde_json::Value = serde_json::from_str(&stdout(&detail)).unwrap();
     let record = &json["skills"][0];
-    assert_eq!(record["name"], "me:codemode");
+    assert_eq!(record["name"], "me-codemode");
     assert_eq!(record["source_kind"], "path");
     assert!(
         record["upstream_coordinate"]
@@ -246,11 +246,11 @@ fn info_lists_only_skills_until_full_is_asked_for() {
     let listing = sandbox.run(&["info"]);
     assert_eq!(code(&listing), 0, "{}", stderr(&listing));
     let text = stdout(&listing);
-    assert!(text.contains("me:codemode"));
+    assert!(text.contains("me-codemode"));
     assert!(!text.contains(&sandbox.manifest().display().to_string()));
     assert!(!text.contains("upstream_coordinate"));
 
-    let one = sandbox.run(&["info", "me:codemode"]);
+    let one = sandbox.run(&["info", "me-codemode"]);
     assert_eq!(stdout(&one).lines().count(), 1);
 }
 
@@ -294,17 +294,17 @@ fn add_and_remove_edit_the_manifest_in_place() {
         "version = 1\n# mine\n[sources.me]\npath = \"~/etc/ai/skills\"\nskills = [\"codemode\"]\n",
     );
 
-    let added = sandbox.run(&["add", "me:tdd"]);
+    let added = sandbox.run(&["add", "me-tdd"]);
     assert_eq!(code(&added), 0, "{}", stderr(&added));
     let manifest = fs::read_to_string(sandbox.manifest()).unwrap();
     assert!(manifest.contains("# mine"));
     assert!(manifest.contains(r#"skills = ["codemode", "tdd"]"#));
-    assert!(sandbox.target("me:tdd").exists());
+    assert!(sandbox.target("me-tdd").exists());
 
-    let removed = sandbox.run(&["remove", "me:tdd"]);
+    let removed = sandbox.run(&["remove", "me-tdd"]);
     assert_eq!(code(&removed), 0, "{}", stderr(&removed));
-    assert!(!sandbox.target("me:tdd").exists());
-    assert!(sandbox.target("me:codemode").exists());
+    assert!(!sandbox.target("me-tdd").exists());
+    assert!(sandbox.target("me-codemode").exists());
 }
 
 #[test]
@@ -318,11 +318,11 @@ fn verify_passes_after_apply_and_fails_after_tampering() {
     assert_eq!(code(&clean), 0, "{}", stderr(&clean));
     assert!(stdout(&clean).contains("verified 2 deployed skill(s)"));
 
-    fs::remove_file(sandbox.target("me:codemode")).unwrap();
+    fs::remove_file(sandbox.target("me-codemode")).unwrap();
     let tampered = sandbox.run(&["verify"]);
 
     assert_eq!(code(&tampered), 1);
-    assert!(stderr(&tampered).contains("me:codemode"));
+    assert!(stderr(&tampered).contains("me-codemode"));
 }
 
 #[test]

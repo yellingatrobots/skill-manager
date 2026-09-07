@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn symlinked_directories_are_rejected() {
         let dir = fixture(&[("SKILL.md", "body"), ("ref/one.md", "one")]);
-        std::os::unix::fs::symlink(dir.path().join("ref"), dir.path().join("alias")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("ref"), dir.path().join("source_id")).unwrap();
         assert!(Tree::read(dir.path()).is_err());
     }
 

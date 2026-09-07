@@ -1,5 +1,7 @@
 //! Minimal YAML frontmatter for `SKILL.md`: enough to read `name` and
-//! `description` and to re-emit the document with `name` rewritten.
+//! `description` and to inject provenance under `metadata`. Every other line
+//! is re-emitted byte for byte, including comments and shapes this parser does
+//! not model (ADR-0013).
 
 const REQUIRED_KEYS: [&str; 2] = ["name", "description"];
 
@@ -17,37 +19,145 @@ pub enum FrontmatterError {
     NotAMapping(String),
 }
 
+/// A frontmatter value. `Opaque` is a shape this parser does not model: it is
+/// preserved as its original lines and never rewritten.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Value {
+    Scalar(String),
+    Map(Vec<(String, String)>),
+    Opaque,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Entry {
+    key: String,
+    value: Value,
+    /// The lines this entry was parsed from; emptied once it is rewritten.
+    lines: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Node {
+    /// A comment or a blank line.
+    Other(String),
+    Entry(Entry),
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Frontmatter {
-    entries: Vec<(String, String)>,
+    nodes: Vec<Node>,
 }
 
 impl Frontmatter {
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.entries
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.as_str())
+        match self.value(key)? {
+            Value::Scalar(scalar) => Some(scalar.as_str()),
+            _ => None,
+        }
     }
 
-    /// Replaces `key` in place, or appends it when absent.
-    pub fn set(&mut self, key: &str, value: impl Into<String>) {
-        match self.entries.iter_mut().find(|(k, _)| k == key) {
-            Some(entry) => entry.1 = value.into(),
-            None => self.entries.push((key.to_string(), value.into())),
+    /// Reads `key` from the map at `section`.
+    pub fn get_in(&self, section: &str, key: &str) -> Option<&str> {
+        match self.value(section)? {
+            Value::Map(map) => map.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str()),
+            _ => None,
         }
+    }
+
+    /// Whether `section` can take injected keys: absent, or a plain map.
+    pub fn is_extensible_map(&self, section: &str) -> bool {
+        matches!(self.value(section), None | Some(Value::Map(_)))
+    }
+
+    /// Replaces `key` in place, or appends it when absent. A replaced entry is
+    /// regenerated rather than re-emitted verbatim.
+    pub fn set(&mut self, key: &str, value: impl Into<String>) {
+        self.put(key, Value::Scalar(value.into()));
+    }
+
+    /// Replaces `key` inside the map at `section`, creating the map when
+    /// absent. A `section` that is not a map is replaced outright; callers
+    /// reject those skills before deploying them.
+    pub fn set_in(&mut self, section: &str, key: &str, value: impl Into<String>) {
+        let mut map = match self.value(section) {
+            Some(Value::Map(map)) => map.clone(),
+            _ => Vec::new(),
+        };
+        match map.iter_mut().find(|(k, _)| k == key) {
+            Some(entry) => entry.1 = value.into(),
+            None => map.push((key.to_string(), value.into())),
+        }
+        self.put(section, Value::Map(map));
     }
 
     pub fn render(&self) -> String {
         let mut out = String::from("---\n");
-        for (key, value) in &self.entries {
-            out.push_str(key);
-            out.push_str(": ");
-            out.push_str(&quote(value));
-            out.push('\n');
+        for node in &self.nodes {
+            match node {
+                Node::Other(line) => {
+                    out.push_str(line);
+                    out.push('\n');
+                }
+                Node::Entry(entry) if entry.lines.is_empty() => {
+                    out.push_str(&render_entry(&entry.key, &entry.value));
+                }
+                Node::Entry(entry) => {
+                    for line in &entry.lines {
+                        out.push_str(line);
+                        out.push('\n');
+                    }
+                }
+            }
         }
         out.push_str("---\n");
         out
+    }
+
+    fn value(&self, key: &str) -> Option<&Value> {
+        self.entries()
+            .find(|entry| entry.key == key)
+            .map(|entry| &entry.value)
+    }
+
+    fn entries(&self) -> impl Iterator<Item = &Entry> {
+        self.nodes.iter().filter_map(|node| match node {
+            Node::Entry(entry) => Some(entry),
+            Node::Other(_) => None,
+        })
+    }
+
+    fn put(&mut self, key: &str, value: Value) {
+        let existing = self.nodes.iter_mut().find_map(|node| match node {
+            Node::Entry(entry) if entry.key == key => Some(entry),
+            _ => None,
+        });
+        match existing {
+            Some(entry) => {
+                entry.value = value;
+                entry.lines.clear();
+            }
+            None => self.nodes.push(Node::Entry(Entry {
+                key: key.to_string(),
+                value,
+                lines: Vec::new(),
+            })),
+        }
+    }
+}
+
+fn render_entry(key: &str, value: &Value) -> String {
+    match value {
+        Value::Scalar(scalar) => format!("{key}: {}\n", quote(scalar)),
+        Value::Map(map) => {
+            let mut out = format!("{key}:\n");
+            for (nested, scalar) in map {
+                out.push_str(&format!("  {nested}: {}\n", quote(scalar)));
+            }
+            out
+        }
+        // Only reachable for an opaque value that was never parsed from lines,
+        // which the parser never produces.
+        Value::Opaque => format!("{key}:\n"),
     }
 }
 
@@ -112,9 +222,11 @@ fn parse_block(block: &str) -> Result<Frontmatter, FrontmatterError> {
     let mut index = 0;
 
     while index < lines.len() {
+        let start = index;
         let line = lines[index];
         index += 1;
         if line.trim().is_empty() || line.trim_start().starts_with('#') {
+            frontmatter.nodes.push(Node::Other(line.to_string()));
             continue;
         }
 
@@ -126,17 +238,25 @@ fn parse_block(block: &str) -> Result<Frontmatter, FrontmatterError> {
         }
         let rest = rest.trim();
 
-        let value = if let Some(style) = block_scalar_style(rest) {
+        let value = if rest.is_empty() && starts_indented_block(&lines[index..]) {
+            let (value, consumed) = read_indented_block(&lines[index..]);
+            index += consumed;
+            value
+        } else if let Some(style) = block_scalar_style(rest) {
             let (text, consumed) = read_block_scalar(&lines[index..], style);
             index += consumed;
-            text
+            Value::Scalar(text)
         } else {
             let (text, consumed) = read_plain_or_quoted(rest, &lines[index..]);
             index += consumed;
-            text
+            Value::Scalar(text)
         };
 
-        frontmatter.set(key.trim(), value);
+        frontmatter.nodes.push(Node::Entry(Entry {
+            key: key.trim().to_string(),
+            value,
+            lines: lines[start..index].iter().map(|l| l.to_string()).collect(),
+        }));
     }
 
     Ok(frontmatter)
@@ -202,6 +322,52 @@ fn fold(lines: &[String]) -> String {
         }
     }
     out
+}
+
+fn starts_indented_block(lines: &[&str]) -> bool {
+    lines
+        .first()
+        .is_some_and(|line| !line.trim().is_empty() && line.starts_with(char::is_whitespace))
+}
+
+/// Reads the indented block under a bare `key:`. A run of `key: value` lines
+/// at one indent is a map; anything else — deeper nesting, sequences — is
+/// opaque and survives only as its original lines.
+fn read_indented_block(lines: &[&str]) -> (Value, usize) {
+    let indent = indent_of(lines[0]);
+    let mut entries = Vec::new();
+    let mut modelled = true;
+    let mut consumed = 0;
+
+    for line in lines {
+        if line.trim().is_empty() || indent_of(line) < indent {
+            break;
+        }
+        consumed += 1;
+        match simple_mapping(line) {
+            Some(entry) if indent_of(line) == indent => entries.push(entry),
+            _ => modelled = false,
+        }
+    }
+
+    let value = if modelled {
+        Value::Map(entries)
+    } else {
+        Value::Opaque
+    };
+    (value, consumed)
+}
+
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+fn simple_mapping(line: &str) -> Option<(String, String)> {
+    let (key, rest) = line.trim().split_once(':')?;
+    if key.is_empty() || key.contains(' ') {
+        return None;
+    }
+    Some((key.to_string(), unquote(rest.trim())))
 }
 
 /// Reads a plain or quoted scalar, absorbing more-indented continuation lines.
@@ -377,14 +543,76 @@ mod tests {
     }
 
     #[test]
-    fn set_replaces_in_place_and_appends_new_keys() {
-        let mut doc = parse("---\nname: handoff\ndescription: d\n---\nbody\n");
-        doc.frontmatter.set("name", "mp:handoff");
-        doc.frontmatter.set("source_alias", "mp");
+    fn rewrites_only_the_keys_that_were_set() {
+        let text = "---\n# who wrote this\nname: handoff\ndescription: >-\n  first line\n  second line\n\nallowed-tools: Read Bash\n---\nbody\n";
+        let mut doc = parse(text);
+        doc.frontmatter.set("name", "mp-handoff");
+
         assert_eq!(
             doc.render(),
-            "---\nname: mp:handoff\ndescription: d\nsource_alias: mp\n---\nbody\n"
+            "---\n# who wrote this\nname: mp-handoff\ndescription: >-\n  first line\n  second line\n\nallowed-tools: Read Bash\n---\nbody\n"
         );
+    }
+
+    #[test]
+    fn round_trips_an_untouched_document_byte_for_byte() {
+        let text = "---\nname: x\n# a comment\ndescription: d\nmetadata:\n  author: matt\nallowed-tools:\n  - Read\n  - Bash\n---\nbody\n";
+        assert_eq!(parse(text).render(), text);
+    }
+
+    #[test]
+    fn reads_a_metadata_map_without_swallowing_later_keys() {
+        let doc = parse(
+            "---\nname: x\ndescription: d\nmetadata:\n  source: mp\n  digest: \"sha256:ab\"\nlicense: MIT\n---\nbody\n",
+        );
+        assert_eq!(doc.frontmatter.get_in("metadata", "source"), Some("mp"));
+        assert_eq!(
+            doc.frontmatter.get_in("metadata", "digest"),
+            Some("sha256:ab")
+        );
+        assert_eq!(doc.frontmatter.get("license"), Some("MIT"));
+        assert!(doc.frontmatter.is_extensible_map("metadata"));
+        assert_eq!(doc.body, "body\n");
+    }
+
+    #[test]
+    fn extends_an_existing_metadata_map_and_keeps_its_keys() {
+        let mut doc = parse("---\nname: x\ndescription: d\nmetadata:\n  author: matt\n---\nbody\n");
+        doc.frontmatter.set_in("metadata", "sm-source-id", "mp");
+
+        assert_eq!(
+            doc.render(),
+            "---\nname: x\ndescription: d\nmetadata:\n  author: matt\n  sm-source-id: mp\n---\nbody\n"
+        );
+    }
+
+    #[test]
+    fn appends_a_metadata_map_when_absent() {
+        let mut doc = parse("---\nname: x\ndescription: d\n---\nbody\n");
+        doc.frontmatter.set_in("metadata", "sm-source-id", "mp");
+        doc.frontmatter.set_in("metadata", "sm-source-id", "me");
+        doc.frontmatter.set_in("metadata", "sm-digest", "sha256:ab");
+
+        assert_eq!(
+            doc.render(),
+            "---\nname: x\ndescription: d\nmetadata:\n  sm-source-id: me\n  sm-digest: sha256:ab\n---\nbody\n"
+        );
+    }
+
+    #[test]
+    fn a_nested_or_sequence_block_is_opaque_and_survives_verbatim() {
+        let nested =
+            "---\nname: x\ndescription: d\nmetadata:\n  nested:\n    deeper: value\n---\nbody\n";
+        let doc = parse(nested);
+        assert!(!doc.frontmatter.is_extensible_map("metadata"));
+        assert_eq!(doc.render(), nested);
+
+        let sequence =
+            "---\nname: x\ndescription: d\nallowed-tools:\n  - Read\n  - Bash\n---\nbody\n";
+        let doc = parse(sequence);
+        assert!(doc.frontmatter.is_extensible_map("metadata"));
+        assert!(!doc.frontmatter.is_extensible_map("allowed-tools"));
+        assert_eq!(doc.render(), sequence);
     }
 
     #[test]

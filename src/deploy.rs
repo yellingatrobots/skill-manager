@@ -157,7 +157,10 @@ impl<'a> Deployment<'a> {
 }
 
 fn expected_names(mut names: BTreeSet<String>) -> BTreeSet<String> {
-    names.insert(format!("{}:provenance", generate::BUILTIN_ALIAS));
+    names.insert(generate::namespaced(
+        generate::BUILTIN_SOURCE_ID,
+        "provenance",
+    ));
     names
 }
 
@@ -173,18 +176,23 @@ mod tests {
     use crate::frontmatter::SkillDoc;
     use tempfile::TempDir;
 
-    fn deployable(alias: &str, name: &str, body: &str) -> (TempDir, Deployable) {
+    fn deployable(source_id: &str, name: &str, body: &str) -> (TempDir, Deployable) {
         let source = TempDir::new().unwrap();
         let text = format!("---\nname: {name}\ndescription: does {name}\n---\n{body}");
         fs::write(source.path().join("SKILL.md"), &text).unwrap();
         let deployable = Deployable {
-            alias: alias.to_string(),
+            source_id: source_id.to_string(),
             name: name.to_string(),
             doc: SkillDoc::parse(&text).unwrap(),
             tree: Tree::read(source.path()).unwrap(),
-            upstream_name: name.to_string(),
-            upstream_url: "https://example.test/skills.git".to_string(),
-            upstream_coordinate: "git:abc".to_string(),
+            origin: generate::Origin {
+                source_kind: "git".to_string(),
+                source_url: "https://example.test/skills.git".to_string(),
+                upstream_name: name.to_string(),
+                upstream_path: name.to_string(),
+                upstream_coordinate: "git:abc".to_string(),
+                digest: format!("sha256:{}", "a".repeat(64)),
+            },
         };
         (source, deployable)
     }
@@ -204,13 +212,13 @@ mod tests {
 
         assert!(applied.switched);
         for target in &paths.targets {
-            let link = target.join("mp:handoff");
+            let link = target.join("mp-handoff");
             assert_eq!(
                 fs::read_link(&link).unwrap(),
-                paths.current.join("mp:handoff")
+                paths.current.join("mp-handoff")
             );
             assert!(link.join("SKILL.md").is_file());
-            assert!(target.join("sm:provenance/SKILL.md").is_file());
+            assert!(target.join("sm-provenance/SKILL.md").is_file());
         }
         assert_eq!(
             fs::read_link(&paths.current).unwrap(),
@@ -246,7 +254,7 @@ mod tests {
         assert!(second.switched);
         assert!(!paths.generation(&first.generation).exists());
         assert_eq!(
-            fs::read_to_string(paths.targets[0].join("mp:handoff/SKILL.md"))
+            fs::read_to_string(paths.targets[0].join("mp-handoff/SKILL.md"))
                 .unwrap()
                 .lines()
                 .last(),
@@ -267,23 +275,23 @@ mod tests {
             applied
                 .targets
                 .iter()
-                .all(|target| target.removed == ["mp:tdd"])
+                .all(|target| target.removed == ["mp-tdd"])
         );
-        assert!(!paths.targets[0].join("mp:tdd").exists());
-        assert!(paths.targets[0].join("mp:handoff").exists());
+        assert!(!paths.targets[0].join("mp-tdd").exists());
+        assert!(paths.targets[0].join("mp-handoff").exists());
     }
 
     #[test]
     fn foreign_target_entries_are_reported_and_left_alone() {
         let (_home, paths) = home();
         let (_source, skill) = deployable("mp", "handoff", "body\n");
-        let foreign = paths.targets[0].join("mp:handoff");
+        let foreign = paths.targets[0].join("mp-handoff");
         fs::create_dir_all(&foreign).unwrap();
         fs::write(foreign.join("SKILL.md"), "not ours").unwrap();
 
         let applied = Deployment::new(&paths).apply(&[skill]).unwrap();
 
-        assert_eq!(applied.targets[0].conflicts, ["mp:handoff"]);
+        assert_eq!(applied.targets[0].conflicts, ["mp-handoff"]);
         assert_eq!(
             fs::read_to_string(foreign.join("SKILL.md")).unwrap(),
             "not ours"
@@ -313,18 +321,18 @@ mod tests {
         let generation = paths.generation(&applied.generation);
         Deployment::new(&paths).apply(&[]).unwrap();
 
-        assert!(!paths.targets[0].join("mp:handoff").exists());
-        assert!(!generation.exists() || generation.join("mp:handoff/SKILL.md").exists());
+        assert!(!paths.targets[0].join("mp-handoff").exists());
+        assert!(!generation.exists() || generation.join("mp-handoff/SKILL.md").exists());
     }
 
     #[test]
     fn a_stale_symlink_into_the_build_directory_is_repointed() {
         let (_home, paths) = home();
         let (_source, skill) = deployable("mp", "handoff", "body\n");
-        let link = paths.targets[0].join("mp:handoff");
+        let link = paths.targets[0].join("mp-handoff");
         fs::create_dir_all(&paths.targets[0]).unwrap();
         std::os::unix::fs::symlink(
-            paths.deployed.join("generations/sha256/old/mp:handoff"),
+            paths.deployed.join("generations/sha256/old/mp-handoff"),
             &link,
         )
         .unwrap();
@@ -333,7 +341,7 @@ mod tests {
 
         assert_eq!(
             fs::read_link(&link).unwrap(),
-            paths.current.join("mp:handoff")
+            paths.current.join("mp-handoff")
         );
         assert!(applied.targets[0].conflicts.is_empty());
     }

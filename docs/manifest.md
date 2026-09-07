@@ -28,7 +28,7 @@ path = "~/etc/ai/skills"
 
 ## Source tables
 
-Each `[sources.<alias>]` table has exactly one transport key:
+Each `[sources.<source-id>]` table has exactly one transport key:
 
 - `git` — a Git or SSH URL
 - `github` — `owner/repository` shorthand
@@ -36,7 +36,9 @@ Each `[sources.<alias>]` table has exactly one transport key:
   `/.well-known/agent-skills/index.json` lists archive URLs and SHA digests
 - `path` — a local source path
 
-`sm` is reserved and cannot be used as an alias. Unknown keys are errors.
+`sm` is reserved and cannot be used as a source ID. A source ID may contain only
+lowercase letters and digits, because it is the part before the first `-` in a
+deployed `<source-id>-<skill>` name (ADR-0013). Unknown keys are errors.
 
 Optional keys:
 
@@ -52,6 +54,10 @@ not supported.
 
 A malformed manifest aborts the command before deployment. A discovered skill
 must be a directory containing `SKILL.md` with frontmatter `name` and
-`description`. An upstream directory name containing `:` is invalid because
-that character separates alias from skill. Invalid individual skills are
-reported and skipped; valid skills continue and the command exits non-zero.
+`description`, in a directory whose name matches the agent-skills shape
+`^[a-z0-9]+(-[a-z0-9]+)*$` — the deployed `<source-id>-<skill>` has to satisfy it
+too. Invalid individual skills are reported and skipped; valid skills continue
+and the command exits non-zero. The same applies to a skill whose `metadata:`
+block is not a plain key-value map, already defines one of the `sm-` keys this
+tool injects, or whose deployed `<source-id>-<skill>` would exceed the spec's
+64-character limit (ADR-0013).

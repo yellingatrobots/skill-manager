@@ -7,15 +7,15 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Reserved for the built-in `sm:provenance` skill (ADR-0002).
-pub const RESERVED_ALIAS: &str = "sm";
+pub const RESERVED_SOURCE_ID: &str = "sm";
 pub const MANIFEST_VERSION: i64 = 1;
 
 /// Written on first run: a valid manifest whose every source is a commented example.
 pub const TEMPLATE: &str = r#"version = 1
 
-# Each [sources.<alias>] table declares one upstream, and the alias namespaces
+# Each [sources.<source-id>] table declares one upstream, and the source_id namespaces
 # every skill it deploys. Uncomment an example and adjust it, or run
-# `skill-manager add <alias>:<skill>` to select a skill under a source.
+# `skill-manager add <source-id>:<skill>` to select a skill under a source.
 
 # [sources.mp]
 # github = "mattpocock/skills"
@@ -86,7 +86,7 @@ impl Transport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Source {
-    pub alias: String,
+    pub source_id: String,
     pub transport: Transport,
     pub git_ref: Option<String>,
     pub dir: Option<String>,
@@ -119,9 +119,9 @@ impl Manifest {
         }
 
         let mut sources = BTreeMap::new();
-        for (alias, raw_source) in raw.sources {
-            let source = build_source(&alias, raw_source)?;
-            sources.insert(alias, source);
+        for (source_id, raw_source) in raw.sources {
+            let source = build_source(&source_id, raw_source)?;
+            sources.insert(source_id, source);
         }
         Ok(Manifest { sources })
     }
@@ -131,10 +131,10 @@ impl Manifest {
         Manifest::parse(&text)
     }
 
-    pub fn source(&self, alias: &str) -> Result<&Source> {
+    pub fn source(&self, source_id: &str) -> Result<&Source> {
         self.sources
-            .get(alias)
-            .ok_or_else(|| invalid(format!("no source `{alias}` in the manifest")))
+            .get(source_id)
+            .ok_or_else(|| invalid(format!("no source `{source_id}` in the manifest")))
     }
 }
 
@@ -163,8 +163,8 @@ struct RawSource {
     skills: Option<Vec<String>>,
 }
 
-fn build_source(alias: &str, raw: RawSource) -> Result<Source> {
-    validate_alias(alias)?;
+fn build_source(source_id: &str, raw: RawSource) -> Result<Source> {
+    validate_source_id(source_id)?;
 
     let declared: Vec<(&str, String)> = [
         ("git", raw.git),
@@ -179,14 +179,14 @@ fn build_source(alias: &str, raw: RawSource) -> Result<Source> {
     let transport = match declared.as_slice() {
         [] => {
             return Err(invalid(format!(
-                "source `{alias}` declares no transport; expected one of git, github, well_known, path"
+                "source `{source_id}` declares no transport; expected one of git, github, well_known, path"
             )));
         }
-        [(key, value)] => build_transport(alias, key, value.clone())?,
+        [(key, value)] => build_transport(source_id, key, value.clone())?,
         _ => {
             let keys: Vec<&str> = declared.iter().map(|(key, _)| *key).collect();
             return Err(invalid(format!(
-                "source `{alias}` declares more than one transport: {}",
+                "source `{source_id}` declares more than one transport: {}",
                 keys.join(", ")
             )));
         }
@@ -196,23 +196,23 @@ fn build_source(alias: &str, raw: RawSource) -> Result<Source> {
         && !matches!(transport, Transport::Git { .. } | Transport::GitHub { .. })
     {
         return Err(invalid(format!(
-            "source `{alias}` sets `ref`, which only applies to git and github sources"
+            "source `{source_id}` sets `ref`, which only applies to git and github sources"
         )));
     }
     if raw.dir.is_some() && matches!(transport, Transport::WellKnown { .. }) {
         return Err(invalid(format!(
-            "source `{alias}` sets `dir`, which does not apply to well_known sources"
+            "source `{source_id}` sets `dir`, which does not apply to well_known sources"
         )));
     }
     if let Some(dir) = &raw.dir {
-        validate_relative_dir(alias, dir)?;
+        validate_relative_dir(source_id, dir)?;
     }
     if let Some(skills) = &raw.skills {
-        validate_skills(alias, skills)?;
+        validate_skills(source_id, skills)?;
     }
 
     Ok(Source {
-        alias: alias.to_string(),
+        source_id: source_id.to_string(),
         transport,
         git_ref: raw.git_ref,
         dir: raw.dir,
@@ -220,14 +220,16 @@ fn build_source(alias: &str, raw: RawSource) -> Result<Source> {
     })
 }
 
-fn build_transport(alias: &str, key: &str, value: String) -> Result<Transport> {
+fn build_transport(source_id: &str, key: &str, value: String) -> Result<Transport> {
     if value.trim().is_empty() {
-        return Err(invalid(format!("source `{alias}` has an empty `{key}`")));
+        return Err(invalid(format!(
+            "source `{source_id}` has an empty `{key}`"
+        )));
     }
     match key {
         "git" => Ok(Transport::Git { url: value }),
         "github" => {
-            validate_github_shorthand(alias, &value)?;
+            validate_github_shorthand(source_id, &value)?;
             Ok(Transport::GitHub {
                 repo: value.trim_end_matches('/').to_string(),
             })
@@ -235,7 +237,7 @@ fn build_transport(alias: &str, key: &str, value: String) -> Result<Transport> {
         "well_known" => {
             if !value.starts_with("https://") {
                 return Err(invalid(format!(
-                    "source `{alias}` has a non-HTTPS `well_known` endpoint: {value}"
+                    "source `{source_id}` has a non-HTTPS `well_known` endpoint: {value}"
                 )));
             }
             Ok(Transport::WellKnown { endpoint: value })
@@ -248,64 +250,67 @@ fn build_transport(alias: &str, key: &str, value: String) -> Result<Transport> {
     }
 }
 
-fn validate_alias(alias: &str) -> Result<()> {
-    if alias == RESERVED_ALIAS {
+fn validate_source_id(source_id: &str) -> Result<()> {
+    if source_id == RESERVED_SOURCE_ID {
         return Err(invalid(format!(
-            "`{RESERVED_ALIAS}` is a reserved source alias"
+            "`{RESERVED_SOURCE_ID}` is a reserved source ID"
         )));
     }
-    if alias.is_empty() {
-        return Err(invalid("a source alias may not be empty"));
+    if source_id.is_empty() {
+        return Err(invalid("a source ID may not be empty"));
     }
-    let allowed = alias
+    // No `-`: it separates source_id from skill in a deployed name (ADR-0013).
+    let allowed = source_id
         .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
     if !allowed {
         return Err(invalid(format!(
-            "source alias `{alias}` may contain only letters, digits, `-`, `_`, and `.`"
+            "source ID `{source_id}` may contain only lowercase letters and digits"
         )));
     }
     Ok(())
 }
 
-fn validate_github_shorthand(alias: &str, value: &str) -> Result<()> {
+fn validate_github_shorthand(source_id: &str, value: &str) -> Result<()> {
     let trimmed = value.trim_end_matches('/');
     let shaped = trimmed.split('/').count() == 2
         && trimmed.split('/').all(|part| !part.is_empty())
         && !trimmed.contains(':');
     if !shaped {
         return Err(invalid(format!(
-            "source `{alias}` has a `github` value that is not `owner/repository`: {value}"
+            "source `{source_id}` has a `github` value that is not `owner/repository`: {value}"
         )));
     }
     Ok(())
 }
 
-fn validate_relative_dir(alias: &str, dir: &str) -> Result<()> {
+fn validate_relative_dir(source_id: &str, dir: &str) -> Result<()> {
     let path = Path::new(dir);
     if path.is_absolute() || path.components().any(|c| c.as_os_str() == "..") {
         return Err(invalid(format!(
-            "source `{alias}` has a `dir` that is not a relative path inside the source: {dir}"
+            "source `{source_id}` has a `dir` that is not a relative path inside the source: {dir}"
         )));
     }
     Ok(())
 }
 
-fn validate_skills(alias: &str, skills: &[String]) -> Result<()> {
+fn validate_skills(source_id: &str, skills: &[String]) -> Result<()> {
     let mut seen = std::collections::BTreeSet::new();
     for skill in skills {
         if skill.is_empty() {
             return Err(invalid(format!(
-                "source `{alias}` selects an empty skill name"
+                "source `{source_id}` selects an empty skill name"
             )));
         }
-        if skill.contains(':') || skill.contains('/') {
+        if !crate::skill::is_valid_name(skill) {
             return Err(invalid(format!(
-                "source `{alias}` selects an invalid skill name `{skill}`"
+                "source `{source_id}` selects an invalid skill name `{skill}`"
             )));
         }
         if !seen.insert(skill) {
-            return Err(invalid(format!("source `{alias}` selects `{skill}` twice")));
+            return Err(invalid(format!(
+                "source `{source_id}` selects `{skill}` twice"
+            )));
         }
     }
     Ok(())
@@ -432,8 +437,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_the_reserved_alias() {
+    fn rejects_the_reserved_source_id() {
         assert!(error("version = 1\n[sources.sm]\ngithub = \"a/b\"\n").contains("reserved"));
+    }
+
+    #[test]
+    fn rejects_source_ids_that_would_make_a_deployed_name_ambiguous() {
+        assert!(
+            error("version = 1\n[sources.my-skills]\ngithub = \"a/b\"\n")
+                .contains("lowercase letters and digits")
+        );
+        assert!(
+            error("version = 1\n[sources.MP]\ngithub = \"a/b\"\n")
+                .contains("lowercase letters and digits")
+        );
     }
 
     #[test]
@@ -489,6 +506,10 @@ mod tests {
     fn rejects_invalid_skill_selections() {
         assert!(
             error("version = 1\n[sources.mp]\ngithub = \"a/b\"\nskills = [\"mp:handoff\"]\n")
+                .contains("invalid skill name")
+        );
+        assert!(
+            error("version = 1\n[sources.mp]\ngithub = \"a/b\"\nskills = [\"Handoff\"]\n")
                 .contains("invalid skill name")
         );
         assert!(

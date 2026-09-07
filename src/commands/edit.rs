@@ -4,6 +4,7 @@ use crate::commands::apply::{self, ApplyReport};
 use crate::commands::update;
 use crate::error::{Error, Failures, Result};
 use crate::fsx;
+use crate::generate::{namespaced, split_namespaced};
 use crate::lock::Lock;
 use crate::manifest::{Manifest, Source};
 use crate::manifest_edit::{self, Edit};
@@ -21,32 +22,27 @@ pub struct EditReport {
     pub failures: Failures,
 }
 
-/// `<alias>:<skill>`, as typed on the command line.
+/// `<source-id>-<skill>`, as typed on the command line.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Selection {
-    pub alias: String,
+    pub source_id: String,
     pub skill: String,
 }
 
 impl std::fmt::Display for Selection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.alias, self.skill)
+        write!(f, "{}", namespaced(&self.source_id, &self.skill))
     }
 }
 
 pub fn parse_selection(text: &str) -> Result<Selection> {
-    let (alias, skill) = text.split_once(':').ok_or_else(|| {
+    let (source_id, skill) = split_namespaced(text).ok_or_else(|| {
         Error::Configuration(format!(
-            "`{text}` is not a namespaced name; expected <alias>:<skill>"
+            "`{text}` is not a namespaced name; expected <source-id>-<skill>"
         ))
     })?;
-    if alias.is_empty() || skill.is_empty() || skill.contains(':') {
-        return Err(Error::Configuration(format!(
-            "`{text}` is not a namespaced name; expected <alias>:<skill>"
-        )));
-    }
     Ok(Selection {
-        alias: alias.to_string(),
+        source_id: source_id.to_string(),
         skill: skill.to_string(),
     })
 }
@@ -61,16 +57,16 @@ pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     let mut unchanged = Vec::new();
     let mut wanted: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for selection in &selections {
-        let source = manifest.source(&selection.alias)?;
-        if manifest_edit::selects_all(&text, &source.alias)? {
+        let source = manifest.source(&selection.source_id)?;
+        if manifest_edit::selects_all(&text, &source.source_id)? {
             unchanged.push(format!(
                 "{selection}: source `{}` already selects every skill",
-                source.alias
+                source.source_id
             ));
             continue;
         }
         wanted
-            .entry(selection.alias.clone())
+            .entry(selection.source_id.clone())
             .or_default()
             .push(selection.skill.clone());
     }
@@ -78,8 +74,8 @@ pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     // Preflight: confirm every requested skill exists before either file changes.
     let mut failures = Failures::new();
     let mut staged = lock.clone();
-    for (alias, skills) in &wanted {
-        let source = manifest.source(alias)?;
+    for (source_id, skills) in &wanted {
+        let source = manifest.source(source_id)?;
         confirm_available(source, skills, &lock, &store, &mut staged, &mut failures)?;
     }
 
@@ -87,12 +83,12 @@ pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     let mut changed = Vec::new();
     for selection in &selections {
         if !wanted
-            .get(&selection.alias)
+            .get(&selection.source_id)
             .is_some_and(|skills| skills.contains(&selection.skill))
         {
             continue;
         }
-        match manifest_edit::add_skill(&edited, &selection.alias, &selection.skill)? {
+        match manifest_edit::add_skill(&edited, &selection.source_id, &selection.skill)? {
             Edit::Changed(next) => {
                 edited = next;
                 changed.push(selection.to_string());
@@ -132,11 +128,11 @@ pub fn remove(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     let manifest = Manifest::parse(&text)?;
 
     for selection in &selections {
-        let source = manifest.source(&selection.alias)?;
-        if manifest_edit::selects_all(&text, &source.alias)? {
+        let source = manifest.source(&selection.source_id)?;
+        if manifest_edit::selects_all(&text, &source.source_id)? {
             return Err(Error::Configuration(format!(
                 "source `{}` omits `skills`, so `{selection}` cannot be removed: the manifest has no `all except` form",
-                source.alias
+                source.source_id
             )));
         }
     }
@@ -145,7 +141,7 @@ pub fn remove(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     let mut changed = Vec::new();
     let mut unchanged = Vec::new();
     for selection in &selections {
-        match manifest_edit::remove_skill(&edited, &selection.alias, &selection.skill)? {
+        match manifest_edit::remove_skill(&edited, &selection.source_id, &selection.skill)? {
             Edit::Changed(next) => {
                 edited = next;
                 changed.push(selection.to_string());
@@ -180,7 +176,7 @@ pub fn remove(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     })
 }
 
-/// Resolves only the affected remote aliases; local sources need no resolution.
+/// Resolves only the affected remote source_ids; local sources need no resolution.
 fn confirm_available(
     source: &Source,
     skills: &[String],
@@ -195,8 +191,8 @@ fn confirm_available(
         for skill in skills {
             if discovery.get(skill).is_none() {
                 return Err(Error::Configuration(format!(
-                    "`{}:{skill}` was not found in {}",
-                    source.alias,
+                    "`{}` was not found in {}",
+                    namespaced(&source.source_id, skill),
                     root.display()
                 )));
             }
@@ -204,7 +200,7 @@ fn confirm_available(
         return Ok(());
     }
 
-    let previous = lock.sources.get(&source.alias);
+    let previous = lock.sources.get(&source.source_id);
     let wanted: Vec<String> = skills.to_vec();
     let locked = update::stage_selection(
         source,
@@ -218,8 +214,8 @@ fn confirm_available(
     for skill in skills {
         if !locked.skills.contains_key(skill) {
             return Err(Error::Configuration(format!(
-                "`{}:{skill}` was not found in {}",
-                source.alias,
+                "`{}` was not found in {}",
+                namespaced(&source.source_id, skill),
                 source.transport.url()
             )));
         }
@@ -227,7 +223,7 @@ fn confirm_available(
 
     let entry = staged
         .sources
-        .entry(source.alias.clone())
+        .entry(source.source_id.clone())
         .or_insert_with(|| locked.clone());
     entry.kind = locked.kind.clone();
     entry.url = locked.url.clone();
@@ -240,7 +236,7 @@ fn confirm_available(
 fn parse_all(requested: &[String]) -> Result<Vec<Selection>> {
     if requested.is_empty() {
         return Err(Error::Configuration(
-            "expected at least one <alias>:<skill>".to_string(),
+            "expected at least one <source-id>-<skill>".to_string(),
         ));
     }
     requested.iter().map(|text| parse_selection(text)).collect()
@@ -278,13 +274,13 @@ mod tests {
     fn add_selects_a_local_skill_and_deploys_it() {
         let home = local_home(&["codemode", "tdd"], "\"codemode\"");
 
-        let report = add(&home.paths, &["me:tdd".to_string()]).unwrap();
+        let report = add(&home.paths, &["me-tdd".to_string()]).unwrap();
 
-        assert_eq!(report.changed, ["me:tdd"]);
+        assert_eq!(report.changed, ["me-tdd"]);
         let text = fs::read_to_string(&home.paths.manifest).unwrap();
         assert!(text.contains("# mine"));
         assert!(text.contains(r#"skills = ["codemode", "tdd"]"#));
-        assert!(home.paths.targets[0].join("me:tdd").exists());
+        assert!(home.paths.targets[0].join("me-tdd").exists());
     }
 
     #[test]
@@ -294,7 +290,7 @@ mod tests {
         fs::rename(&home.paths.manifest, &repo).unwrap();
         std::os::unix::fs::symlink(&repo, &home.paths.manifest).unwrap();
 
-        add(&home.paths, &["me:tdd".to_string()]).unwrap();
+        add(&home.paths, &["me-tdd".to_string()]).unwrap();
 
         assert!(
             fs::symlink_metadata(&home.paths.manifest)
@@ -314,11 +310,11 @@ mod tests {
         let home = local_home(&["codemode"], "\"codemode\"");
         let before = fs::read_to_string(&home.paths.manifest).unwrap();
 
-        let error = add(&home.paths, &["me:absent".to_string()])
+        let error = add(&home.paths, &["me-absent".to_string()])
             .unwrap_err()
             .to_string();
 
-        assert!(error.contains("me:absent"));
+        assert!(error.contains("me-absent"));
         assert_eq!(fs::read_to_string(&home.paths.manifest).unwrap(), before);
         assert!(!home.paths.lock.exists());
     }
@@ -336,7 +332,7 @@ mod tests {
             "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
         );
 
-        let report = add(&home.paths, &["me:codemode".to_string()]).unwrap();
+        let report = add(&home.paths, &["me-codemode".to_string()]).unwrap();
 
         assert!(report.changed.is_empty());
         assert!(report.unchanged[0].contains("already selects every skill"));
@@ -347,7 +343,7 @@ mod tests {
     fn add_reports_an_already_selected_skill() {
         let home = local_home(&["codemode"], "\"codemode\"");
 
-        let report = add(&home.paths, &["me:codemode".to_string()]).unwrap();
+        let report = add(&home.paths, &["me-codemode".to_string()]).unwrap();
 
         assert!(report.changed.is_empty());
         assert!(report.unchanged[0].contains("already selected"));
@@ -369,20 +365,20 @@ mod tests {
         );
         crate::commands::update::run(&home.paths, None, false).unwrap();
 
-        let report = add(&home.paths, &["mp:tdd".to_string()]).unwrap();
+        let report = add(&home.paths, &["mp-tdd".to_string()]).unwrap();
 
-        assert_eq!(report.changed, ["mp:tdd"]);
+        assert_eq!(report.changed, ["mp-tdd"]);
         let lock = Lock::read(&home.paths.lock).unwrap();
         assert!(lock.skill("mp", "handoff").is_some());
         assert!(lock.skill("mp", "tdd").is_some());
-        assert!(home.paths.targets[0].join("mp:tdd/SKILL.md").is_file());
+        assert!(home.paths.targets[0].join("mp-tdd/SKILL.md").is_file());
     }
 
     #[test]
     fn add_does_not_create_sources() {
         let home = local_home(&["codemode"], "\"codemode\"");
         assert!(
-            add(&home.paths, &["other:x".to_string()])
+            add(&home.paths, &["other-x".to_string()])
                 .unwrap_err()
                 .to_string()
                 .contains("no source")
@@ -394,16 +390,16 @@ mod tests {
         let home = local_home(&["codemode", "tdd"], "\"codemode\", \"tdd\"");
         apply::run(&home.paths).unwrap();
 
-        let report = remove(&home.paths, &["me:tdd".to_string()]).unwrap();
+        let report = remove(&home.paths, &["me-tdd".to_string()]).unwrap();
 
-        assert_eq!(report.changed, ["me:tdd"]);
+        assert_eq!(report.changed, ["me-tdd"]);
         assert!(
             fs::read_to_string(&home.paths.manifest)
                 .unwrap()
                 .contains(r#"skills = ["codemode"]"#)
         );
-        assert!(!home.paths.targets[0].join("me:tdd").exists());
-        assert!(home.paths.targets[0].join("me:codemode").exists());
+        assert!(!home.paths.targets[0].join("me-tdd").exists());
+        assert!(home.paths.targets[0].join("me-codemode").exists());
     }
 
     #[test]
@@ -419,7 +415,7 @@ mod tests {
             "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
         );
 
-        let error = remove(&home.paths, &["me:codemode".to_string()])
+        let error = remove(&home.paths, &["me-codemode".to_string()])
             .unwrap_err()
             .to_string();
 
@@ -430,7 +426,7 @@ mod tests {
     fn remove_reports_a_skill_that_was_not_selected() {
         let home = local_home(&["codemode"], "\"codemode\"");
 
-        let report = remove(&home.paths, &["me:other".to_string()]).unwrap();
+        let report = remove(&home.paths, &["me-other".to_string()]).unwrap();
 
         assert!(report.changed.is_empty());
         assert!(report.unchanged[0].contains("not selected"));
@@ -442,9 +438,9 @@ mod tests {
         assert!(parse_selection(":handoff").is_err());
         assert!(parse_selection("mp:").is_err());
         assert_eq!(
-            parse_selection("mp:handoff").unwrap(),
+            parse_selection("mp-handoff").unwrap(),
             Selection {
-                alias: "mp".into(),
+                source_id: "mp".into(),
                 skill: "handoff".into()
             }
         );

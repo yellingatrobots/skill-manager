@@ -3,7 +3,7 @@
 use crate::commands::plan;
 use crate::deploy::{Deployment, file_name};
 use crate::error::{Error, Failures, Result};
-use crate::generate;
+use crate::generate::{self, namespaced};
 use crate::lock::Lock;
 use crate::manifest::Manifest;
 use crate::paths::Paths;
@@ -38,7 +38,7 @@ pub fn run(paths: &Paths) -> Result<VerifyReport> {
         .deployables
         .iter()
         .map(|deployable| deployable.deployed_name())
-        .chain([format!("{}:provenance", generate::BUILTIN_ALIAS)])
+        .chain([namespaced(generate::BUILTIN_SOURCE_ID, "provenance")])
         .collect();
 
     let expected = expected_generation(&plan.deployables)?;
@@ -55,7 +55,7 @@ pub fn run(paths: &Paths) -> Result<VerifyReport> {
 /// Only entries the current lock references are checked (ADR-0003).
 fn verify_store(manifest: &Manifest, lock: &Lock, store: &Store, problems: &mut Failures) {
     for source in manifest.sources.values() {
-        let Some(locked) = lock.sources.get(&source.alias) else {
+        let Some(locked) = lock.sources.get(&source.source_id) else {
             continue;
         };
         for (name, entry) in &locked.skills {
@@ -64,18 +64,21 @@ fn verify_store(manifest: &Manifest, lock: &Lock, store: &Store, problems: &mut 
             }
             let Some(digest) = Digest::parse(&entry.digest) else {
                 problems.push(format!(
-                    "{}:{name}: unusable digest `{}`",
-                    source.alias, entry.digest
+                    "{}: unusable digest `{}`",
+                    namespaced(&source.source_id, name),
+                    entry.digest
                 ));
                 continue;
             };
             match store.verify(&digest) {
                 Ok(true) => {}
                 Ok(false) => problems.push(format!(
-                    "{}:{name}: store entry {digest} no longer hashes to its digest",
-                    source.alias
+                    "{}: store entry {digest} no longer hashes to its digest",
+                    namespaced(&source.source_id, name)
                 )),
-                Err(error) => problems.push(format!("{}:{name}: {error}", source.alias)),
+                Err(error) => {
+                    problems.push(format!("{}: {error}", namespaced(&source.source_id, name)))
+                }
             }
         }
     }
@@ -260,7 +263,7 @@ mod tests {
     #[test]
     fn a_missing_target_symlink_is_reported() {
         let home = local_home();
-        std::fs::remove_file(home.paths.targets[0].join("me:codemode")).unwrap();
+        std::fs::remove_file(home.paths.targets[0].join("me-codemode")).unwrap();
 
         let report = run(&home.paths).unwrap();
 
@@ -268,14 +271,14 @@ mod tests {
             report
                 .problems
                 .iter()
-                .any(|problem| problem.contains("`me:codemode` is not deployed"))
+                .any(|problem| problem.contains("`me-codemode` is not deployed"))
         );
     }
 
     #[test]
     fn a_foreign_entry_occupying_a_deployed_name_is_reported() {
         let home = local_home();
-        let path = home.paths.targets[0].join("me:codemode");
+        let path = home.paths.targets[0].join("me-codemode");
         std::fs::remove_file(&path).unwrap();
         std::fs::create_dir_all(&path).unwrap();
 
@@ -292,8 +295,8 @@ mod tests {
     #[test]
     fn an_extra_owned_entry_is_reported() {
         let home = local_home();
-        let stale = home.paths.targets[1].join("me:retired");
-        std::os::unix::fs::symlink(home.paths.current.join("me:retired"), &stale).unwrap();
+        let stale = home.paths.targets[1].join("me-retired");
+        std::os::unix::fs::symlink(home.paths.current.join("me-retired"), &stale).unwrap();
 
         let report = run(&home.paths).unwrap();
 
@@ -310,7 +313,7 @@ mod tests {
         let home = local_home();
         let current = std::fs::read_link(&home.paths.current).unwrap();
         fsx::make_writable(&current).unwrap();
-        std::fs::write(current.join("me:codemode/SKILL.md"), "tampered\n").unwrap();
+        std::fs::write(current.join("me-codemode/SKILL.md"), "tampered\n").unwrap();
 
         let report = run(&home.paths).unwrap();
 

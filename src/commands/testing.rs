@@ -61,19 +61,20 @@ pub fn store_skill(home: &Home, name: &str, body: &str) -> String {
 }
 
 pub fn lock_toml(
-    alias: &str,
+    source_id: &str,
     kind: &str,
     url: &str,
     git_ref: Option<&str>,
     skills: &[(&str, &str, &str, &str)],
 ) -> String {
-    let mut out = format!("version = 1\n\n[sources.{alias}]\nkind = \"{kind}\"\nurl = \"{url}\"\n");
+    let mut out =
+        format!("version = 1\n\n[sources.{source_id}]\nkind = \"{kind}\"\nurl = \"{url}\"\n");
     if let Some(git_ref) = git_ref {
         out.push_str(&format!("ref = \"{git_ref}\"\n"));
     }
     for (name, path, coordinate, digest) in skills {
         out.push_str(&format!(
-            "\n[sources.{alias}.skills.{name}]\npath = \"{path}\"\nupstream_name = \"{name}\"\ncoordinate = \"{coordinate}\"\ndigest = \"{digest}\"\n"
+            "\n[sources.{source_id}.skills.{name}]\npath = \"{path}\"\nupstream_name = \"{name}\"\ncoordinate = \"{coordinate}\"\ndigest = \"{digest}\"\n"
         ));
     }
     out

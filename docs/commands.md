@@ -13,9 +13,9 @@ run `update`; extra locked skills that are no longer selected are ignored. A
 malformed manifest aborts; an invalid individual skill is skipped while valid
 skills deploy, and the command exits non-zero.
 
-## `update [<alias>] [--no-apply]`
+## `update [<source-id>] [--no-apply]`
 
-Resolves and fetches every remote source, or one source when an alias is
+Resolves and fetches every remote source, or one source when a source ID is
 provided, then atomically replaces the lock beside the manifest. Unpinned sources
 move to the current tip of declared intent; pinned sources resolve to the same
 coordinate. Successful updates invoke `apply` unless `--no-apply` is passed.
@@ -35,24 +35,24 @@ a mismatch fails with an instruction to run `update`. Successful immutable
 additions remain if another fetch fails; all failures are reported and the
 command exits non-zero. `hydrate` never invokes `apply`.
 
-## `add <alias>:<skill>...`
+## `add <source-id>-<skill>...`
 
-Adds one or more skill selections under existing source aliases, preserving
+Adds one or more skill selections under existing source IDs, preserving
 manifest formatting, then invokes `apply` once. It does not create sources.
 Before editing either manifest or lock, it confirms every requested skill
-exists and resolves only the affected remote aliases; local additions need no
+exists and resolves only the affected remote source IDs; local additions need no
 resolution. Any preflight failure leaves both files unchanged. If a source
 omits `skills` and therefore already selects all skills, `add` is a reported
 no-op.
 
-## `remove <alias>:<skill>...`
+## `remove <source-id>-<skill>...`
 
 Removes one or more explicit skill selections, preserving manifest formatting,
 then invokes `apply` once. It does not remove sources. Removing one skill from
 a source that omits `skills` is an error because the manifest has no “all
 except” representation.
 
-## `info [<alias>:<skill>] [--full] [--json]`
+## `info [<source-id>-<skill>] [--full] [--json]`
 
 Lists every deployed skill and concise provenance; a namespaced name narrows it
 to one. `--full` also reports where this machine keeps things — manifest, lock,
@@ -60,7 +60,10 @@ store, deployed tree, the generation `current` points at, and each target — an
 every provenance field per skill. Local-path sources are derived from the
 manifest and current working tree even though they have no lock entry. `--json`
 always provides the complete machine-readable
-`{ "locations": {…}, "skills": […] }` object used by `sm:provenance`.
+`{ "locations": {…}, "skills": […] }` object used by `sm-provenance`. Its field
+names drop the `sm-` prefix the frontmatter needs: `source_id`, `source_kind`,
+`source_url`, `upstream_name`, `upstream_path`, `upstream_coordinate`,
+`digest`.
 
 ## `verify`
 

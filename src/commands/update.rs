@@ -3,13 +3,13 @@
 use crate::commands::apply::{self, ApplyReport};
 use crate::error::{Error, Failures, Result};
 use crate::fetch;
+use crate::generate::namespaced;
 use crate::lock::{Lock, LockedSkill, LockedSource};
 use crate::manifest::{Manifest, Source};
 use crate::paths::Paths;
-use crate::skill::{self, Discovery, Skill};
+use crate::skill::{self, Discovery};
 use crate::store::Store;
 use std::collections::BTreeMap;
-use std::path::Path;
 
 #[derive(Debug)]
 pub struct UpdateReport {
@@ -18,12 +18,12 @@ pub struct UpdateReport {
     pub failures: Failures,
 }
 
-pub fn run(paths: &Paths, alias: Option<&str>, no_apply: bool) -> Result<UpdateReport> {
+pub fn run(paths: &Paths, source_id: Option<&str>, no_apply: bool) -> Result<UpdateReport> {
     let manifest = Manifest::read(&paths.manifest)?;
     let previous = Lock::read(&paths.lock)?;
     let store = Store::new(&paths.store);
 
-    let selected = select_sources(&manifest, alias)?;
+    let selected = select_sources(&manifest, source_id)?;
     let mut failures = Failures::new();
     let mut staged: BTreeMap<String, LockedSource> = BTreeMap::new();
 
@@ -31,14 +31,14 @@ pub fn run(paths: &Paths, alias: Option<&str>, no_apply: bool) -> Result<UpdateR
     for source in &selected {
         let locked = stage(
             source,
-            previous.sources.get(&source.alias),
+            previous.sources.get(&source.source_id),
             &store,
             &mut failures,
         )?;
-        staged.insert(source.alias.clone(), locked);
+        staged.insert(source.source_id.clone(), locked);
     }
 
-    let lock = merge(&manifest, previous, staged, alias);
+    let lock = merge(&manifest, previous, staged, source_id);
     lock.write(&paths.lock)?;
 
     let unlockable = unlockable_selections(&manifest, &lock);
@@ -60,24 +60,27 @@ pub fn run(paths: &Paths, alias: Option<&str>, no_apply: bool) -> Result<UpdateR
     }
 
     Ok(UpdateReport {
-        updated: selected.iter().map(|source| source.alias.clone()).collect(),
+        updated: selected
+            .iter()
+            .map(|source| source.source_id.clone())
+            .collect(),
         applied,
         failures,
     })
 }
 
-fn select_sources<'a>(manifest: &'a Manifest, alias: Option<&str>) -> Result<Vec<&'a Source>> {
-    match alias {
+fn select_sources<'a>(manifest: &'a Manifest, source_id: Option<&str>) -> Result<Vec<&'a Source>> {
+    match source_id {
         None => Ok(manifest
             .sources
             .values()
             .filter(|s| !s.transport.is_local())
             .collect()),
-        Some(alias) => {
-            let source = manifest.source(alias)?;
+        Some(source_id) => {
+            let source = manifest.source(source_id)?;
             if source.transport.is_local() {
                 return Err(Error::Configuration(format!(
-                    "source `{alias}` is a local path; it is read directly by `apply`"
+                    "source `{source_id}` is a local path; it is read directly by `apply`"
                 )));
             }
             Ok(vec![source])
@@ -165,7 +168,7 @@ fn stage_git(
         locked.skills.insert(
             found.name.clone(),
             LockedSkill {
-                path: relative_path(&checkout.root, found),
+                path: skill::relative_path(&checkout.root, found),
                 upstream_name: found.upstream_name.clone(),
                 coordinate: checkout.coordinate.clone(),
                 digest: digest.to_string(),
@@ -233,8 +236,9 @@ fn retain_previous(
             continue;
         }
         failures.push(format!(
-            "{}:{}: {}",
-            source.alias, invalid.name, invalid.reason
+            "{}: {}",
+            namespaced(&source.source_id, &invalid.name),
+            invalid.reason
         ));
         if let Some(entry) = previous.and_then(|previous| previous.skills.get(&invalid.name)) {
             locked.skills.insert(invalid.name.clone(), entry.clone());
@@ -251,8 +255,8 @@ fn retain_previous(
             continue;
         }
         failures.push(format!(
-            "{}:{selected}: not found in the source",
-            source.alias
+            "{}: not found in the source",
+            namespaced(&source.source_id, selected)
         ));
         if let Some(entry) = previous.and_then(|previous| previous.skills.get(selected)) {
             locked.skills.insert(selected.clone(), entry.clone());
@@ -260,28 +264,19 @@ fn retain_previous(
     }
 }
 
-fn relative_path(root: &Path, skill: &Skill) -> String {
-    skill
-        .tree
-        .root()
-        .strip_prefix(root)
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| skill.name.clone())
-}
-
 /// Keeps untouched sources, drops sources the manifest no longer declares.
 fn merge(
     manifest: &Manifest,
     previous: Lock,
     staged: BTreeMap<String, LockedSource>,
-    alias: Option<&str>,
+    source_id: Option<&str>,
 ) -> Lock {
     let mut sources = previous.sources;
-    if alias.is_none() {
-        sources.retain(|alias, _| {
+    if source_id.is_none() {
+        sources.retain(|source_id, _| {
             manifest
                 .sources
-                .get(alias)
+                .get(source_id)
                 .is_some_and(|source| !source.transport.is_local())
         });
     }
@@ -296,8 +291,8 @@ fn unlockable_selections(manifest: &Manifest, lock: &Lock) -> Vec<String> {
             continue;
         }
         for selected in source.skills.iter().flatten() {
-            if lock.skill(&source.alias, selected).is_none() {
-                missing.push(format!("{}:{selected}", source.alias));
+            if lock.skill(&source.source_id, selected).is_none() {
+                missing.push(namespaced(&source.source_id, selected));
             }
         }
     }
@@ -331,7 +326,7 @@ mod tests {
         assert_eq!(entry.upstream_name, "handoff");
         assert!(entry.coordinate.starts_with("git:"));
         assert!(entry.digest.starts_with("sha256:"));
-        assert!(home.paths.targets[0].join("mp:handoff/SKILL.md").is_file());
+        assert!(home.paths.targets[0].join("mp-handoff/SKILL.md").is_file());
     }
 
     #[test]
@@ -406,14 +401,14 @@ mod tests {
             report
                 .failures
                 .iter()
-                .any(|failure| failure.starts_with("mp:handoff:"))
+                .any(|failure| failure.starts_with("mp-handoff:"))
         );
         let after = Lock::read(&home.paths.lock).unwrap();
         assert_eq!(after.skill("mp", "handoff"), before.skill("mp", "handoff"));
         assert_ne!(after.skill("mp", "tdd"), before.skill("mp", "tdd"));
-        assert!(home.paths.targets[0].join("mp:handoff").exists());
+        assert!(home.paths.targets[0].join("mp-handoff").exists());
         assert_eq!(
-            fs::read_to_string(home.paths.targets[0].join("mp:tdd/SKILL.md"))
+            fs::read_to_string(home.paths.targets[0].join("mp-tdd/SKILL.md"))
                 .unwrap()
                 .lines()
                 .last(),
@@ -440,7 +435,7 @@ mod tests {
             report
                 .failures
                 .iter()
-                .any(|failure| failure.contains("mp:absent"))
+                .any(|failure| failure.contains("mp-absent"))
         );
         assert!(
             Lock::read(&home.paths.lock)
@@ -451,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn updating_one_alias_leaves_other_sources_untouched() {
+    fn updating_one_source_id_leaves_other_sources_untouched() {
         let home = home();
         let one = git_origin(&[("handoff/SKILL.md", &skill_text("handoff", "one\n"))]);
         let two = git_origin(&[("tdd/SKILL.md", &skill_text("tdd", "one\n"))]);
@@ -507,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn a_local_alias_cannot_be_updated() {
+    fn a_local_source_id_cannot_be_updated() {
         let home = home();
         write_manifest(
             &home,
@@ -540,7 +535,7 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(
-            fs::read_to_string(home.paths.targets[0].join("mp:handoff/SKILL.md"))
+            fs::read_to_string(home.paths.targets[0].join("mp-handoff/SKILL.md"))
                 .unwrap()
                 .lines()
                 .last(),

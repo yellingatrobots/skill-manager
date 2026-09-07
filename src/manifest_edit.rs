@@ -11,13 +11,13 @@ pub enum Edit {
     Unchanged,
 }
 
-pub fn selects_all(text: &str, alias: &str) -> Result<bool> {
-    Ok(skills_array(&parse(text)?, alias).is_none())
+pub fn selects_all(text: &str, source_id: &str) -> Result<bool> {
+    Ok(skills_array(&parse(text)?, source_id).is_none())
 }
 
-pub fn add_skill(text: &str, alias: &str, skill: &str) -> Result<Edit> {
+pub fn add_skill(text: &str, source_id: &str, skill: &str) -> Result<Edit> {
     let mut document = parse(text)?;
-    let array = skills_array_mut(&mut document, alias)?;
+    let array = skills_array_mut(&mut document, source_id)?;
     if contains(array, skill) {
         return Ok(Edit::Unchanged);
     }
@@ -25,9 +25,9 @@ pub fn add_skill(text: &str, alias: &str, skill: &str) -> Result<Edit> {
     Ok(Edit::Changed(document.to_string()))
 }
 
-pub fn remove_skill(text: &str, alias: &str, skill: &str) -> Result<Edit> {
+pub fn remove_skill(text: &str, source_id: &str, skill: &str) -> Result<Edit> {
     let mut document = parse(text)?;
-    let array = skills_array_mut(&mut document, alias)?;
+    let array = skills_array_mut(&mut document, source_id)?;
     let Some(index) = position(array, skill) else {
         return Ok(Edit::Unchanged);
     };
@@ -52,34 +52,34 @@ fn parse(text: &str) -> Result<DocumentMut> {
         .map_err(|error| Error::Manifest(error.to_string()))
 }
 
-fn skills_array<'a>(document: &'a DocumentMut, alias: &str) -> Option<&'a Array> {
+fn skills_array<'a>(document: &'a DocumentMut, source_id: &str) -> Option<&'a Array> {
     document
         .get("sources")?
-        .get(alias)?
+        .get(source_id)?
         .get("skills")?
         .as_array()
 }
 
-fn skills_array_mut<'a>(document: &'a mut DocumentMut, alias: &str) -> Result<&'a mut Array> {
+fn skills_array_mut<'a>(document: &'a mut DocumentMut, source_id: &str) -> Result<&'a mut Array> {
     let source = document
         .get_mut("sources")
         .and_then(Item::as_table_like_mut)
-        .and_then(|sources| sources.get_mut(alias))
-        .ok_or_else(|| Error::Manifest(format!("no source `{alias}` in the manifest")))?;
+        .and_then(|sources| sources.get_mut(source_id))
+        .ok_or_else(|| Error::Manifest(format!("no source `{source_id}` in the manifest")))?;
 
     let skills = source
         .as_table_like_mut()
         .and_then(|table| table.get_mut("skills"))
         .ok_or_else(|| {
             Error::Manifest(format!(
-                "source `{alias}` omits `skills` and therefore already selects every skill"
+                "source `{source_id}` omits `skills` and therefore already selects every skill"
             ))
         })?;
 
     match skills {
         Item::Value(Value::Array(array)) => Ok(array),
         _ => Err(Error::Manifest(format!(
-            "source `{alias}` has a `skills` that is not an array"
+            "source `{source_id}` has a `skills` that is not an array"
         ))),
     }
 }
@@ -163,7 +163,7 @@ path = "~/etc/ai/skills"
     }
 
     #[test]
-    fn an_unknown_alias_is_an_error() {
+    fn an_unknown_source_id_is_an_error() {
         assert!(
             add_skill(MANIFEST, "nope", "x")
                 .unwrap_err()

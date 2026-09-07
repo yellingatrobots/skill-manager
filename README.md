@@ -3,8 +3,9 @@
 Installs, namespaces, and deploys AI agent skills across multiple agent
 harnesses from a single declarative manifest.
 
-Every deployed skill is named `<alias>:<skill>` — `mp:handoff`, `me:codemode` —
-so skills from different sources never collide and always carry provenance.
+Every deployed skill is named `<source-id>-<skill>` — `mp-handoff`, `me-codemode` —
+so skills from different sources never collide and always carry provenance in
+a spec-shaped `metadata:` block.
 
 ## Install
 
@@ -41,9 +42,9 @@ path = "~/etc/ai/skills"
 skill-manager update            # resolve, fetch, rewrite the lock, deploy
 skill-manager apply             # deploy from manifest + lock + store, offline
 skill-manager hydrate           # fetch exactly what the lock pins (fresh machine)
-skill-manager add mp:wizard     # select a skill, then deploy
-skill-manager remove mp:wizard  # deselect a skill, then deploy
-skill-manager info [mp:tdd]     # what is deployed (--full for locations and metadata, --json)
+skill-manager add mp-wizard     # select a skill, then deploy
+skill-manager remove mp-wizard  # deselect a skill, then deploy
+skill-manager info [mp-tdd]     # what is deployed (--full for locations and metadata, --json)
 skill-manager verify            # read-only convergence check
 ```
 

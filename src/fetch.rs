@@ -45,7 +45,7 @@ pub fn checkout(source: &Source, git_ref: Option<&str>) -> Result<Checkout> {
         other => {
             return Err(Error::Configuration(format!(
                 "source `{}` is a {} source and cannot be checked out",
-                source.alias,
+                source.source_id,
                 other.kind()
             )));
         }
@@ -126,14 +126,14 @@ pub fn local_root(source: &Source) -> Result<PathBuf> {
             if !resolved.is_dir() {
                 return Err(Error::Configuration(format!(
                     "source `{}`: {configured} is not a directory",
-                    source.alias
+                    source.source_id
                 )));
             }
             Ok(resolved.clone())
         }
         other => Err(Error::Configuration(format!(
             "source `{}` is a {} source, not a local path",
-            source.alias,
+            source.source_id,
             other.kind()
         ))),
     }

@@ -8,15 +8,56 @@ use std::path::{Path, PathBuf};
 
 pub const SKILL_FILE: &str = "SKILL.md";
 
+/// The shape the agent-skills spec allows for a `name:`, which a deployed
+/// `<source-id>-<skill>` must still satisfy: `^[a-z0-9]+(-[a-z0-9]+)*$`.
+pub fn is_valid_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.split('-').all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        })
+}
+
 /// A structurally valid skill found in a source.
 #[derive(Debug, Clone)]
 pub struct Skill {
-    /// The directory name — the `<skill>` half of `<alias>:<skill>`.
+    /// The directory name — the `<skill>` half of `<source-id>-<skill>`.
     pub name: String,
     /// The frontmatter `name:` that namespacing will overwrite.
     pub upstream_name: String,
     pub doc: SkillDoc,
     pub tree: Tree,
+}
+
+/// Provenance is injected into `metadata`, so that key must be a plain map we
+/// can extend, and it must not already claim one of our keys (ADR-0013).
+fn check_injectable(doc: &SkillDoc) -> std::result::Result<(), String> {
+    let metadata = crate::generate::METADATA;
+    if !doc.frontmatter.is_extensible_map(metadata) {
+        return Err(format!(
+            "frontmatter `{metadata}` is not a plain key-value map, so provenance cannot be added"
+        ));
+    }
+    for key in crate::generate::INJECTED_KEYS {
+        if doc.frontmatter.get_in(metadata, key).is_some() {
+            return Err(format!(
+                "frontmatter `{metadata}` already defines `{key}`, which skill-manager injects"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Where a skill sits inside its source, for provenance.
+pub fn relative_path(root: &Path, skill: &Skill) -> String {
+    skill
+        .tree
+        .root()
+        .strip_prefix(root)
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| skill.name.clone())
 }
 
 #[derive(Debug, Clone)]
@@ -104,8 +145,10 @@ fn collect_skill(path: &Path, discovery: &mut Discovery) {
 }
 
 fn read_skill(name: &str, path: &Path) -> std::result::Result<Skill, String> {
-    if name.contains(':') {
-        return Err("directory name contains `:`, which separates alias from skill".to_string());
+    if !is_valid_name(name) {
+        return Err(format!(
+            "directory name `{name}` is not a valid skill name: lowercase letters and digits, separated by single `-`"
+        ));
     }
     let tree = Tree::read(path).map_err(|error| error.to_string())?;
     let source = tree
@@ -114,6 +157,7 @@ fn read_skill(name: &str, path: &Path) -> std::result::Result<Skill, String> {
         .ok_or_else(|| format!("{SKILL_FILE} is not a regular file"))?;
     let text = String::from_utf8(source).map_err(|_| format!("{SKILL_FILE} is not valid UTF-8"))?;
     let doc = SkillDoc::parse(&text).map_err(|error| error.to_string())?;
+    check_injectable(&doc)?;
 
     Ok(Skill {
         name: name.to_string(),
@@ -210,14 +254,70 @@ mod tests {
     }
 
     #[test]
-    fn rejects_directory_names_containing_a_colon() {
+    fn rejects_directory_names_outside_the_spec_shape() {
         let dir = TempDir::new().unwrap();
         write(dir.path(), "mp:handoff/SKILL.md", &skill_md("handoff"));
+        write(dir.path(), "Hand_off/SKILL.md", &skill_md("handoff"));
+        write(dir.path(), "hand--off/SKILL.md", &skill_md("handoff"));
 
         let found = discover(dir.path(), None).unwrap();
 
         assert!(found.skills.is_empty());
-        assert!(found.invalid[0].reason.contains('`'));
+        assert_eq!(found.invalid.len(), 3);
+        assert!(found.invalid[0].reason.contains("valid skill name"));
+    }
+
+    #[test]
+    fn accepts_hyphenated_lowercase_names() {
+        assert!(is_valid_name("tdd"));
+        assert!(is_valid_name("likec4-dsl"));
+        assert!(!is_valid_name("-tdd"));
+        assert!(!is_valid_name("mp:tdd"));
+        assert!(!is_valid_name(""));
+    }
+
+    #[test]
+    fn rejects_a_metadata_block_that_cannot_take_injected_keys() {
+        let dir = TempDir::new().unwrap();
+        write(
+            dir.path(),
+            "nested/SKILL.md",
+            "---\nname: nested\ndescription: d\nmetadata:\n  a:\n    b: c\n---\nbody\n",
+        );
+
+        let found = discover(dir.path(), None).unwrap();
+
+        assert!(found.skills.is_empty());
+        assert!(found.invalid[0].reason.contains("plain key-value map"));
+    }
+
+    #[test]
+    fn rejects_a_skill_that_already_claims_an_injected_key() {
+        let dir = TempDir::new().unwrap();
+        write(
+            dir.path(),
+            "claimed/SKILL.md",
+            "---\nname: claimed\ndescription: d\nmetadata:\n  sm-source-id: theirs\n---\nbody\n",
+        );
+
+        let found = discover(dir.path(), None).unwrap();
+
+        assert!(found.skills.is_empty());
+        assert!(found.invalid[0].reason.contains("sm-source-id"));
+    }
+
+    #[test]
+    fn keeps_a_metadata_block_that_uses_other_sm_keys() {
+        let dir = TempDir::new().unwrap();
+        write(
+            dir.path(),
+            "tagged/SKILL.md",
+            "---\nname: tagged\ndescription: d\nmetadata:\n  sm-tags: rust\n---\nbody\n",
+        );
+
+        let found = discover(dir.path(), None).unwrap();
+
+        assert_eq!(found.names(), ["tagged"]);
     }
 
     #[test]

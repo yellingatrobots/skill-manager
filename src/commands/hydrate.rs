@@ -2,6 +2,7 @@
 
 use crate::error::{Error, Failures, Result};
 use crate::fetch;
+use crate::generate::namespaced;
 use crate::git;
 use crate::lock::{self, LockedSkill, LockedSource};
 use crate::paths::Paths;
@@ -21,17 +22,17 @@ pub fn run(paths: &Paths) -> Result<HydrateReport> {
     let store = Store::new(&paths.store);
     let mut report = HydrateReport::default();
 
-    for (alias, source) in &locked.sources {
+    for (source_id, source) in &locked.sources {
         let missing = missing_skills(source, &store, &mut report);
         if missing.is_empty() {
             continue;
         }
         let outcome = match source.kind.as_str() {
-            "well_known" => hydrate_archives(alias, source, &missing, &store, &mut report),
-            _ => hydrate_git(alias, source, &missing, &store, &mut report),
+            "well_known" => hydrate_archives(source_id, source, &missing, &store, &mut report),
+            _ => hydrate_git(source_id, source, &missing, &store, &mut report),
         };
         if let Err(error) = outcome {
-            report.failures.push(format!("{alias}: {error}"));
+            report.failures.push(format!("{source_id}: {error}"));
         }
     }
 
@@ -58,7 +59,7 @@ fn missing_skills<'a>(
 }
 
 fn hydrate_git(
-    alias: &str,
+    source_id: &str,
     source: &LockedSource,
     missing: &[(&String, &LockedSkill, Digest)],
     store: &Store,
@@ -77,20 +78,22 @@ fn hydrate_git(
         let Some(commit) = fetch::commit_of(coordinate) else {
             report
                 .failures
-                .push(format!("{alias}: unusable coordinate `{coordinate}`"));
+                .push(format!("{source_id}: unusable coordinate `{coordinate}`"));
             continue;
         };
         let temp =
             tempfile::TempDir::new().map_err(|error| Error::io(std::env::temp_dir(), error))?;
         let checkout = temp.path().join("checkout");
         match git::fetch_into(&source.url, Some(commit), &checkout) {
-            Err(error) => report.failures.push(format!("{alias}: {error}")),
+            Err(error) => report.failures.push(format!("{source_id}: {error}")),
             Ok(_) => {
                 for (name, skill, digest) in entries {
                     let path = checkout.join(&skill.path);
                     match store_verified(&path, digest, store) {
-                        Ok(()) => report.added.push(format!("{alias}:{name}")),
-                        Err(error) => report.failures.push(format!("{alias}:{name}: {error}")),
+                        Ok(()) => report.added.push(namespaced(source_id, name)),
+                        Err(error) => report
+                            .failures
+                            .push(format!("{}: {error}", namespaced(source_id, name))),
                     }
                 }
             }
@@ -100,7 +103,7 @@ fn hydrate_git(
 }
 
 fn hydrate_archives(
-    alias: &str,
+    source_id: &str,
     source: &LockedSource,
     missing: &[(&String, &LockedSkill, Digest)],
     store: &Store,
@@ -109,12 +112,16 @@ fn hydrate_archives(
     for (name, skill, digest) in missing {
         let fetched = fetch::archive_skill(&source.url, name, &skill.path, Some(&skill.coordinate));
         match fetched {
-            Err(error) => report.failures.push(format!("{alias}:{name}: {error}")),
+            Err(error) => report
+                .failures
+                .push(format!("{}: {error}", namespaced(source_id, name))),
             Ok(fetched) => {
                 let path = fetched.root.join(name.as_str());
                 match store_verified(&path, digest, store) {
-                    Ok(()) => report.added.push(format!("{alias}:{name}")),
-                    Err(error) => report.failures.push(format!("{alias}:{name}: {error}")),
+                    Ok(()) => report.added.push(namespaced(source_id, name)),
+                    Err(error) => report
+                        .failures
+                        .push(format!("{}: {error}", namespaced(source_id, name))),
                 }
             }
         }
@@ -144,10 +151,10 @@ fn store_verified(path: &Path, expected: &Digest, store: &Store) -> Result<()> {
 #[cfg(test)]
 fn locked_digests(lock: &crate::lock::Lock) -> Vec<(String, Digest)> {
     let mut digests = Vec::new();
-    for (alias, source) in &lock.sources {
+    for (source_id, source) in &lock.sources {
         for (name, skill) in &source.skills {
             if let Some(digest) = Digest::parse(&skill.digest) {
-                digests.push((format!("{alias}:{name}"), digest));
+                digests.push((namespaced(source_id, name), digest));
             }
         }
     }
@@ -188,7 +195,7 @@ mod tests {
         let report = run(&home.paths).unwrap();
 
         assert!(report.failures.is_empty(), "{:?}", report.failures);
-        assert_eq!(report.added, ["mp:handoff", "mp:tdd"]);
+        assert_eq!(report.added, ["mp-handoff", "mp-tdd"]);
         let lock = Lock::read(&home.paths.lock).unwrap();
         let store = Store::new(&home.paths.store);
         for (_, digest) in locked_digests(&lock) {
@@ -263,12 +270,12 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert_eq!(report.added, ["mp:tdd"]);
+        assert_eq!(report.added, ["mp-tdd"]);
         assert!(
             report
                 .failures
                 .iter()
-                .any(|failure| failure.contains("mp:handoff"))
+                .any(|failure| failure.contains("mp-handoff"))
         );
     }
 

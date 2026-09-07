@@ -18,14 +18,14 @@ coordinate = "git:<commit-sha>"
 digest = "sha256:<content-digest>"
 ```
 
-Remote source identity is recorded once under its alias. Resolution is stored
+Remote source identity is recorded once under its source ID. Resolution is stored
 per skill because a structurally invalid update may retain that skill's last
 valid coordinate while sibling skills advance. Keys are serialized in
-deterministic alias and skill order. No timestamps are written.
+deterministic source ID and skill order. No timestamps are written.
 
 Local-path sources have no lock entries: `apply` reads them directly from
 their working trees. They are still first-class provenance records in
 `skill-manager info`, derived from the manifest and current source content.
-Their configured path is reported as `upstream_url`, their semantic content
-digest as `upstream_coordinate`, and `info` may additionally show the resolved
-absolute path.
+Their configured path is reported as `sm-source-url`, their semantic content
+digest as `sm-upstream-coordinate`, and `info` may additionally show the
+resolved absolute path.

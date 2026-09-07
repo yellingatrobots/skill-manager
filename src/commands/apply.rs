@@ -71,17 +71,47 @@ mod tests {
         let report = run(&home.paths).unwrap();
 
         assert!(report.failures.is_empty());
-        assert_eq!(report.deployed, ["me:codemode"]);
-        let deployed = home.paths.targets[0].join("me:codemode/SKILL.md");
+        assert_eq!(report.deployed, ["me-codemode"]);
+        let deployed = home.paths.targets[0].join("me-codemode/SKILL.md");
         let text = fs::read_to_string(deployed).unwrap();
-        assert!(text.contains("name: me:codemode\n"));
-        assert!(text.contains("source_alias: me\n"));
-        assert!(text.contains("upstream_name: codemode\n"));
+        assert!(text.contains("name: me-codemode\n"));
+        assert!(text.contains("metadata:\n"));
+        assert!(text.contains("\n  sm-source-id: me\n"));
+        assert!(text.contains("\n  sm-source-kind: path\n"));
+        assert!(text.contains("\n  sm-upstream-name: codemode\n"));
         assert!(text.contains(&format!(
-            "upstream_url: {}/etc/ai/skills\n",
+            "\n  sm-source-url: {}/etc/ai/skills\n",
             home.path().display()
         )));
-        assert!(text.contains("upstream_coordinate: sha256:"));
+        assert!(text.contains("\n  sm-upstream-path: codemode\n"));
+        assert!(text.contains("\n  sm-upstream-coordinate: sha256:"));
+        assert!(text.contains("\n  sm-digest: sha256:"));
+    }
+
+    #[test]
+    fn reports_a_deployed_name_over_the_spec_limit_and_skips_it() {
+        let home = home();
+        let long = "a".repeat(62);
+        write_skill(
+            &home.path().join("etc/ai/skills").join(&long),
+            &long,
+            "body\n",
+        );
+        write_skill(&home.path().join("etc/ai/skills/short"), "short", "body\n");
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
+        );
+
+        let report = run(&home.paths).unwrap();
+
+        assert_eq!(report.deployed, ["me-short"]);
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.contains("65 characters"))
+        );
     }
 
     #[test]
@@ -98,12 +128,12 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert_eq!(report.deployed, ["me:good"]);
+        assert_eq!(report.deployed, ["me-good"]);
         assert!(
             report
                 .failures
                 .iter()
-                .any(|failure| failure.starts_with("me:bad:"))
+                .any(|failure| failure.starts_with("me-bad:"))
         );
     }
 
@@ -118,12 +148,12 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert_eq!(report.deployed, ["me:good"]);
+        assert_eq!(report.deployed, ["me-good"]);
         assert!(
             report
                 .failures
                 .iter()
-                .any(|failure| failure.contains("me:absent"))
+                .any(|failure| failure.contains("me-absent"))
         );
     }
 
@@ -149,11 +179,12 @@ mod tests {
         let report = run(&home.paths).unwrap();
 
         assert!(report.failures.is_empty());
-        assert_eq!(report.deployed, ["mp:handoff"]);
-        let text = fs::read_to_string(home.paths.targets[1].join("mp:handoff/SKILL.md")).unwrap();
-        assert!(text.contains("name: mp:handoff\n"));
-        assert!(text.contains("upstream_url: https://github.com/mattpocock/skills.git\n"));
-        assert!(text.contains("upstream_coordinate: git:abc123\n"));
+        assert_eq!(report.deployed, ["mp-handoff"]);
+        let text = fs::read_to_string(home.paths.targets[1].join("mp-handoff/SKILL.md")).unwrap();
+        assert!(text.contains("name: mp-handoff\n"));
+        assert!(text.contains("\n  sm-source-url: https://github.com/mattpocock/skills.git\n"));
+        assert!(text.contains("\n  sm-upstream-path: skills/handoff\n"));
+        assert!(text.contains("\n  sm-upstream-coordinate: git:abc123\n"));
     }
 
     #[test]
@@ -201,7 +232,7 @@ mod tests {
 
         let error = run(&home.paths).unwrap_err().to_string();
 
-        assert!(error.contains("mp:tdd"));
+        assert!(error.contains("mp-tdd"));
         assert!(error.contains("skill-manager update"));
     }
 
@@ -229,7 +260,7 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert_eq!(report.deployed, ["mp:handoff"]);
+        assert_eq!(report.deployed, ["mp-handoff"]);
     }
 
     #[test]

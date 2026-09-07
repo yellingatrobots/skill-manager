@@ -24,8 +24,8 @@ enum Command {
 
     /// Resolve and fetch remote sources, then rewrite the lock.
     Update {
-        /// Update only this source alias.
-        alias: Option<String>,
+        /// Update only this source ID.
+        source_id: Option<String>,
         /// Rewrite the lock without deploying.
         #[arg(long)]
         no_apply: bool,
@@ -36,21 +36,21 @@ enum Command {
 
     /// Select skills under existing sources, then apply.
     Add {
-        /// One or more `<alias>:<skill>`.
+        /// One or more `<source-id>-<skill>`.
         #[arg(required = true)]
         selections: Vec<String>,
     },
 
     /// Deselect skills, then apply.
     Remove {
-        /// One or more `<alias>:<skill>`.
+        /// One or more `<source-id>-<skill>`.
         #[arg(required = true)]
         selections: Vec<String>,
     },
 
     /// Report where deployed skills came from.
     Info {
-        /// A namespaced `<alias>:<skill>`; omit to list everything.
+        /// A namespaced `<source-id>-<skill>`; omit to list everything.
         name: Option<String>,
         /// Also report locations and every provenance field.
         #[arg(long)]
@@ -74,7 +74,7 @@ pub fn run(cli: Cli) -> Result<i32> {
     if manifest::scaffold(&paths.manifest)? {
         println!("created {}", paths.manifest.display());
         println!(
-            "edit it to declare a source, or run `skill-manager add <alias>:<skill>` to select a skill"
+            "edit it to declare a source, or run `skill-manager add <source-id>-<skill>` to select a skill"
         );
         return Ok(EXIT_OK);
     }
@@ -84,8 +84,11 @@ pub fn run(cli: Cli) -> Result<i32> {
             print_apply(&report);
             Ok(exit_code(&report.failures))
         }
-        Command::Update { alias, no_apply } => {
-            let report = update::run(&paths, alias.as_deref(), no_apply)?;
+        Command::Update {
+            source_id,
+            no_apply,
+        } => {
+            let report = update::run(&paths, source_id.as_deref(), no_apply)?;
             println!("updated {}", list(&report.updated));
             if let Some(applied) = &report.applied {
                 print_apply(applied);

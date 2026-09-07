@@ -14,13 +14,17 @@ An upstream that supplies skills: a git repo, GitHub shorthand, a well-known
 HTTPS endpoint, or a local path.
 _Avoid_: package, registry, repo
 
-**Alias**:
-The short, unique handle for a source (`mp`, `me`). It is the source's table
-key in the manifest, so uniqueness is structural.
+**Source ID**:
+The short, unique handle for a source (`mp`, `me`) — lowercase letters and
+digits only, so a deployed name splits unambiguously at its first `-`. It is
+the source's table key in the manifest, so uniqueness is structural, and it is
+recorded in a deployed skill as `sm-source-id`.
+_Avoid_: alias, prefix, namespace
 
 **Namespaced name**:
-A deployed skill's identity, `<alias>:<skill>` — `mp:handoff`. Written into
-both the deployed directory name and the generated frontmatter `name:`.
+A deployed skill's identity, `<source-id>-<skill>` — `mp-handoff`. Written into
+both the deployed directory name and the generated frontmatter `name:`, and
+shaped to what the agent-skills spec allows for a `name:` (ADR-0013).
 _Avoid_: prefixed name, qualified name
 
 **Manifest**:
@@ -58,9 +62,12 @@ What identifies content at its origin — a resolved commit SHA, a tarball
 digest. Distinct from the content digest of what was extracted.
 
 **Provenance**:
-The origin facts carried with a deployed skill: source alias, upstream
-coordinate, and `upstream_name` — the original frontmatter `name:` that
-namespacing overwrote.
+The origin facts carried in a deployed skill's frontmatter `metadata:` block,
+each key prefixed `sm-` because the spec's `metadata` is one flat map
+(ADR-0013): `sm-source-id`, `sm-source-kind`, and `sm-source-url` describe the
+source; `sm-upstream-path`, `sm-upstream-coordinate`, `sm-digest`, and
+`sm-upstream-name` — the original frontmatter `name:` that namespacing
+overwrote — describe this skill at its origin.
 
 **Hydrate**:
 Populating the store from the lock without resolving anything new. The

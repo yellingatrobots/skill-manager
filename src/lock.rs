@@ -77,8 +77,8 @@ impl Lock {
 
     pub fn render(&self) -> String {
         let mut out = format!("version = {LOCK_VERSION}\n");
-        for (alias, source) in &self.sources {
-            out.push_str(&format!("\n[sources.{}]\n", key(alias)));
+        for (source_id, source) in &self.sources {
+            out.push_str(&format!("\n[sources.{}]\n", key(source_id)));
             out.push_str(&entry("kind", &source.kind));
             out.push_str(&entry("url", &source.url));
             if let Some(git_ref) = &source.git_ref {
@@ -90,7 +90,7 @@ impl Lock {
             for (name, skill) in &source.skills {
                 out.push_str(&format!(
                     "\n[sources.{}.skills.{}]\n",
-                    key(alias),
+                    key(source_id),
                     key(name)
                 ));
                 out.push_str(&entry("path", &skill.path));
@@ -102,8 +102,8 @@ impl Lock {
         out
     }
 
-    pub fn skill(&self, alias: &str, skill: &str) -> Option<&LockedSkill> {
-        self.sources.get(alias)?.skills.get(skill)
+    pub fn skill(&self, source_id: &str, skill: &str) -> Option<&LockedSkill> {
+        self.sources.get(source_id)?.skills.get(skill)
     }
 }
 
@@ -203,13 +203,13 @@ mod tests {
     fn renders_deterministically_regardless_of_insertion_order() {
         let mut a = Lock::default();
         let mut b = Lock::default();
-        for alias in ["zz", "aa"] {
+        for source_id in ["zz", "aa"] {
             a.sources
-                .insert(alias.into(), sample().sources["mp"].clone());
+                .insert(source_id.into(), sample().sources["mp"].clone());
         }
-        for alias in ["aa", "zz"] {
+        for source_id in ["aa", "zz"] {
             b.sources
-                .insert(alias.into(), sample().sources["mp"].clone());
+                .insert(source_id.into(), sample().sources["mp"].clone());
         }
         assert_eq!(a.render(), b.render());
         assert!(a.render().find("[sources.aa]") < a.render().find("[sources.zz]"));

@@ -2,7 +2,7 @@
 
 use crate::error::{Error, Result};
 use crate::frontmatter::SkillDoc;
-use crate::generate::BUILTIN_ALIAS;
+use crate::generate::{BUILTIN_SOURCE_ID, METADATA, split_namespaced};
 use crate::lock::Lock;
 use crate::manifest::Manifest;
 use crate::paths::Paths;
@@ -13,15 +13,17 @@ use std::fs;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Provenance {
     pub name: String,
-    pub source_alias: String,
+    pub source_id: String,
     pub skill: String,
     pub description: String,
-    pub upstream_name: String,
-    pub upstream_url: String,
-    pub upstream_coordinate: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_kind: Option<String>,
-    /// The store content digest, for skills that have a lock entry.
+    pub source_url: String,
+    pub upstream_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upstream_path: Option<String>,
+    pub upstream_coordinate: String,
+    /// The content digest of what the skill was generated from.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub digest: Option<String>,
     /// Where a local source currently resolves to on this machine.
@@ -105,22 +107,26 @@ fn collect(paths: &Paths) -> Result<Vec<Provenance>> {
         let doc = SkillDoc::parse(&text)
             .map_err(|error| Error::Configuration(format!("{name}: {error}")))?;
 
-        let (alias, skill) = name
-            .split_once(':')
-            .unwrap_or((BUILTIN_ALIAS, name.as_str()));
+        let (source_id, skill) =
+            split_namespaced(&name).unwrap_or((BUILTIN_SOURCE_ID, name.as_str()));
         let source = manifest
             .as_ref()
-            .and_then(|manifest| manifest.sources.get(alias));
+            .and_then(|manifest| manifest.sources.get(source_id));
         records.push(Provenance {
             name: name.clone(),
-            source_alias: field(&doc, "source_alias").unwrap_or_else(|| alias.to_string()),
+            source_id: metadata(&doc, "sm-source-id").unwrap_or_else(|| source_id.to_string()),
             skill: skill.to_string(),
             description: field(&doc, "description").unwrap_or_default(),
-            upstream_name: field(&doc, "upstream_name").unwrap_or_default(),
-            upstream_url: field(&doc, "upstream_url").unwrap_or_default(),
-            upstream_coordinate: field(&doc, "upstream_coordinate").unwrap_or_default(),
-            source_kind: source.map(|source| source.transport.kind().to_string()),
-            digest: lock.skill(alias, skill).map(|entry| entry.digest.clone()),
+            source_kind: metadata(&doc, "sm-source-kind")
+                .or_else(|| source.map(|source| source.transport.kind().to_string())),
+            source_url: metadata(&doc, "sm-source-url").unwrap_or_default(),
+            upstream_name: metadata(&doc, "sm-upstream-name").unwrap_or_default(),
+            upstream_path: metadata(&doc, "sm-upstream-path"),
+            upstream_coordinate: metadata(&doc, "sm-upstream-coordinate").unwrap_or_default(),
+            digest: metadata(&doc, "sm-digest").or_else(|| {
+                lock.skill(source_id, skill)
+                    .map(|entry| entry.digest.clone())
+            }),
             resolved_path: source.and_then(|source| match &source.transport {
                 crate::manifest::Transport::Path { resolved, .. } => {
                     Some(resolved.display().to_string())
@@ -136,6 +142,11 @@ fn collect(paths: &Paths) -> Result<Vec<Provenance>> {
 
 fn field(doc: &SkillDoc, key: &str) -> Option<String> {
     doc.frontmatter.get(key).map(str::to_string)
+}
+
+/// Provenance lives under the spec's `metadata:` key (ADR-0013).
+fn metadata(doc: &SkillDoc, key: &str) -> Option<String> {
+    doc.frontmatter.get_in(METADATA, key).map(str::to_string)
 }
 
 pub fn render_locations(locations: &Locations) -> String {
@@ -156,37 +167,38 @@ pub fn render_locations(locations: &Locations) -> String {
 
 /// The concise human listing.
 pub fn render_line(record: &Provenance) -> String {
-    if record.upstream_url.is_empty() {
+    if record.source_url.is_empty() {
         return format!("{}  built in", record.name);
     }
     format!(
         "{}  {}  {}",
         record.name,
-        record.upstream_url,
+        record.source_url,
         short(&record.upstream_coordinate)
     )
 }
 
 pub fn render_detail(record: &Provenance) -> String {
-    let mut out = format!(
-        "{}\n  description         {}\n  source_alias        {}\n  upstream_name       {}\n  upstream_url        {}\n  upstream_coordinate {}\n",
-        record.name,
-        record.description,
-        record.source_alias,
-        record.upstream_name,
-        record.upstream_url,
-        record.upstream_coordinate
-    );
+    let mut out = format!("{}\n", record.name);
+    let mut line = |label: &str, value: &str| out.push_str(&format!("  {label:<20}{value}\n"));
+    line("description", &record.description);
+    line("source_id", &record.source_id);
     if let Some(kind) = &record.source_kind {
-        out.push_str(&format!("  source_kind         {kind}\n"));
+        line("source_kind", kind);
     }
+    line("source_url", &record.source_url);
+    line("upstream_name", &record.upstream_name);
+    if let Some(path) = &record.upstream_path {
+        line("upstream_path", path);
+    }
+    line("upstream_coordinate", &record.upstream_coordinate);
     if let Some(path) = &record.resolved_path {
-        out.push_str(&format!("  resolved_path       {path}\n"));
+        line("resolved_path", path);
     }
     if let Some(digest) = &record.digest {
-        out.push_str(&format!("  digest              {digest}\n"));
+        line("digest", digest);
     }
-    out.push_str(&format!("  deployed_path       {}\n", record.deployed_path));
+    line("deployed_path", &record.deployed_path);
     out
 }
 
@@ -221,7 +233,7 @@ mod tests {
         let records = run(&home.paths, None).unwrap();
 
         let names: Vec<&str> = records.iter().map(|record| record.name.as_str()).collect();
-        assert_eq!(names, ["me:codemode", "sm:provenance"]);
+        assert_eq!(names, ["me-codemode", "sm-provenance"]);
     }
 
     #[test]
@@ -238,9 +250,9 @@ mod tests {
         );
         apply::run(&home.paths).unwrap();
 
-        let record = &run(&home.paths, Some("me:codemode")).unwrap()[0];
+        let record = &run(&home.paths, Some("me-codemode")).unwrap()[0];
 
-        assert_eq!(record.source_alias, "me");
+        assert_eq!(record.source_id, "me");
         assert_eq!(record.upstream_name, "codemode");
         assert_eq!(record.source_kind.as_deref(), Some("path"));
         assert!(record.upstream_coordinate.starts_with("sha256:"));
@@ -254,7 +266,13 @@ mod tests {
                     .as_str()
             )
         );
-        assert!(record.digest.is_none());
+        assert!(
+            record
+                .digest
+                .as_deref()
+                .is_some_and(|digest| digest.starts_with("sha256:"))
+        );
+        assert_eq!(record.upstream_path.as_deref(), Some("codemode"));
     }
 
     #[test]
@@ -270,7 +288,7 @@ mod tests {
         );
         update::run(&home.paths, None, false).unwrap();
 
-        let record = &run(&home.paths, Some("mp:handoff")).unwrap()[0];
+        let record = &run(&home.paths, Some("mp-handoff")).unwrap()[0];
 
         assert!(record.upstream_coordinate.starts_with("git:"));
         assert!(
@@ -297,19 +315,23 @@ mod tests {
         );
         apply::run(&home.paths).unwrap();
 
-        let records = run(&home.paths, Some("me:codemode")).unwrap();
+        let records = run(&home.paths, Some("me-codemode")).unwrap();
         let json = serde_json::to_value(&records).unwrap();
 
         let record = &json[0];
-        assert_eq!(record["name"], "me:codemode");
-        assert_eq!(record["source_alias"], "me");
+        assert_eq!(record["name"], "me-codemode");
+        assert_eq!(record["source_id"], "me");
         assert_eq!(record["source_kind"], "path");
-        assert!(record["digest"].is_null());
+        assert!(
+            record["digest"]
+                .as_str()
+                .is_some_and(|digest| digest.starts_with("sha256:"))
+        );
         assert!(
             record["deployed_path"]
                 .as_str()
                 .unwrap()
-                .contains("me:codemode")
+                .contains("me-codemode")
         );
     }
 
@@ -334,7 +356,7 @@ mod tests {
             locations.targets,
             home.paths.targets.iter().map(display).collect::<Vec<_>>()
         );
-        assert!(report.skills.iter().any(|s| s.name == "sm:provenance"));
+        assert!(report.skills.iter().any(|s| s.name == "sm-provenance"));
 
         let text = render_locations(locations);
         assert!(text.contains(&format!("manifest    {}", locations.manifest)));
@@ -347,7 +369,7 @@ mod tests {
         write_manifest(&home, "version = 1\n");
         apply::run(&home.paths).unwrap();
         assert!(
-            run(&home.paths, Some("me:absent"))
+            run(&home.paths, Some("me-absent"))
                 .unwrap_err()
                 .to_string()
                 .contains("not deployed")
@@ -379,12 +401,12 @@ mod tests {
         );
         apply::run(&home.paths).unwrap();
 
-        let record = &run(&home.paths, Some("me:codemode")).unwrap()[0];
+        let record = &run(&home.paths, Some("me-codemode")).unwrap()[0];
 
-        let builtin = &run(&home.paths, Some("sm:provenance")).unwrap()[0];
-        assert_eq!(render_line(builtin), "sm:provenance  built in");
+        let builtin = &run(&home.paths, Some("sm-provenance")).unwrap()[0];
+        assert_eq!(render_line(builtin), "sm-provenance  built in");
         assert_eq!(render_line(record).lines().count(), 1);
-        assert!(render_line(record).starts_with("me:codemode  "));
+        assert!(render_line(record).starts_with("me-codemode  "));
         assert!(render_detail(record).contains("upstream_coordinate sha256:"));
     }
 }
