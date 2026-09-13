@@ -16,6 +16,7 @@ pub struct ApplyReport {
     pub deployed: Vec<String>,
     pub targets: Vec<TargetReport>,
     pub failures: Failures,
+    pub skipped: Vec<String>,
 }
 
 pub fn run(paths: &Paths) -> Result<ApplyReport> {
@@ -46,6 +47,7 @@ pub fn run_with(paths: &Paths, manifest: &Manifest, lock: &Lock) -> Result<Apply
         deployed: plan.deployables.iter().map(|d| d.deployed_name()).collect(),
         targets: applied.targets,
         failures: plan.failures,
+        skipped: plan.skipped,
     })
 }
 
@@ -54,6 +56,39 @@ mod tests {
     use super::*;
     use crate::commands::testing::*;
     use std::fs;
+
+    #[test]
+    fn an_absent_local_path_is_skipped_and_the_rest_still_deploys() {
+        let home = home();
+        write_skill(&home.path().join("etc/ai/skills/here"), "here", "body\n");
+        write_manifest(
+            &home,
+            "version = 1\n             [sources.me]\npath = \"{home}/etc/ai/skills\"\n\n             [sources.other]\npath = \"{home}/not/on/this/machine\"\n",
+        );
+
+        let report = run(&home.paths).unwrap();
+
+        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert_eq!(report.deployed, ["me-here"]);
+        assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
+        assert!(report.skipped[0].contains("source `other`"));
+        assert!(report.skipped[0].contains("does not exist"));
+    }
+
+    #[test]
+    fn a_local_path_that_is_not_a_directory_still_aborts() {
+        let home = home();
+        fs::create_dir_all(home.path().join("etc")).unwrap();
+        fs::write(home.path().join("etc/skills"), "not a directory").unwrap();
+        write_manifest(
+            &home,
+            "version = 1\n[sources.me]\npath = \"{home}/etc/skills\"\n",
+        );
+
+        let error = run(&home.paths).unwrap_err().to_string();
+
+        assert!(error.contains("is not a directory"), "{error}");
+    }
 
     #[test]
     fn deploys_a_local_source_into_every_target() {

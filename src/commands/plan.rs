@@ -14,14 +14,13 @@ use crate::tree::{Digest, Tree};
 pub struct Plan {
     pub deployables: Vec<Deployable>,
     pub failures: Failures,
+    /// Local sources whose configured path is absent on this machine.
+    pub skipped: Vec<String>,
 }
 
 /// Remote lock entries must still describe the manifest's declared intent.
 pub fn check_drift(manifest: &Manifest, lock: &Lock) -> Result<()> {
-    for source in manifest.sources.values() {
-        if source.transport.is_local() {
-            continue;
-        }
+    for source in manifest.remote() {
         let source_id = &source.source_id;
         let Some(locked) = lock.sources.get(source_id) else {
             return Err(drift(format!("source `{source_id}` has no lock entry")));
@@ -60,16 +59,16 @@ fn drift(what: impl std::fmt::Display) -> Error {
     Error::Drift(format!("{what}; run `skill-manager update`"))
 }
 
-/// Builds every deployable offline. Invalid individual skills are collected,
-/// not fatal; a missing store entry is fatal.
+/// Builds every deployable offline. Invalid individual skills are collected
+/// and a local source whose path is absent is skipped, neither being fatal; a
+/// missing store entry is fatal.
 pub fn build(manifest: &Manifest, lock: &Lock, store: &Store) -> Result<Plan> {
     let mut plan = Plan::default();
-    for source in manifest.sources.values() {
-        if source.transport.is_local() {
-            add_local(source, &mut plan)?;
-        } else {
-            add_remote(source, lock, store, &mut plan)?;
-        }
+    for source in manifest.local() {
+        add_local(source, &mut plan)?;
+    }
+    for source in manifest.remote() {
+        add_remote(source, lock, store, &mut plan)?;
     }
     plan.deployables.sort_by_key(Deployable::deployed_name);
     reject_oversized_names(&mut plan);
@@ -131,7 +130,14 @@ fn add_remote(source: &Source, lock: &Lock, store: &Store, plan: &mut Plan) -> R
 }
 
 fn add_local(source: &Source, plan: &mut Plan) -> Result<()> {
-    let root = fetch::local_root(source)?;
+    let Some(root) = fetch::local_root(source)? else {
+        plan.skipped.push(format!(
+            "source `{}`: {} does not exist; skipped",
+            source.source_id,
+            source.transport.url()
+        ));
+        return Ok(());
+    };
     let discovery = skill::discover(&root, source.dir.as_deref())?;
     for invalid in &discovery.invalid {
         if source.selects(&invalid.name) {

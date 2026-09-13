@@ -11,7 +11,8 @@ matches the manifest's transport, URL, `ref`, and `dir`, and that every
 selected remote skill has a lock entry. Drift aborts with an instruction to
 run `update`; extra locked skills that are no longer selected are ignored. A
 malformed manifest aborts; an invalid individual skill is skipped while valid
-skills deploy, and the command exits non-zero.
+skills deploy, and the command exits non-zero. A local-path source whose
+directory is absent is reported as skipped and does not affect the exit code.
 
 ## `update [<source-id>] [--no-apply]`
 

@@ -117,25 +117,30 @@ pub fn install_archive(bytes: &[u8], name: &str, root: &Path) -> Result<()> {
 }
 
 /// A local source is read straight from its working tree (ADR-0005).
-pub fn local_root(source: &Source) -> Result<PathBuf> {
-    match &source.transport {
-        Transport::Path {
-            resolved,
-            configured,
-        } => {
-            if !resolved.is_dir() {
-                return Err(Error::Configuration(format!(
-                    "source `{}`: {configured} is not a directory",
-                    source.source_id
-                )));
-            }
-            Ok(resolved.clone())
-        }
-        other => Err(Error::Configuration(format!(
+///
+/// `None` when the configured path is absent: one manifest is shared across
+/// machines, and a local directory need not exist on all of them. A path that
+/// exists but is not a directory stays an error — that is a manifest mistake.
+pub fn local_root(source: &Source) -> Result<Option<PathBuf>> {
+    let Transport::Path {
+        resolved,
+        configured,
+    } = &source.transport
+    else {
+        return Err(Error::Configuration(format!(
             "source `{}` is a {} source, not a local path",
             source.source_id,
-            other.kind()
+            source.transport.kind()
+        )));
+    };
+    match fs::metadata(resolved) {
+        Ok(metadata) if metadata.is_dir() => Ok(Some(resolved.clone())),
+        Ok(_) => Err(Error::Configuration(format!(
+            "source `{}`: {configured} is not a directory",
+            source.source_id
         ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(Error::io(resolved, error)),
     }
 }
 

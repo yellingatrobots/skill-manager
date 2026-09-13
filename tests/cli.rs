@@ -151,6 +151,30 @@ fn apply_deploys_a_local_source_into_both_targets() {
 }
 
 #[test]
+fn apply_skips_a_local_source_whose_path_is_absent_and_still_succeeds() {
+    let sandbox = Sandbox::new();
+    sandbox.write_skill("codemode", "principles\n");
+    sandbox.write_manifest(
+        "version = 1\n\
+         [sources.me]\npath = \"~/etc/ai/skills\"\n\n\
+         [sources.work]\npath = \"~/not/on/this/machine\"\n",
+    );
+
+    let output = sandbox.run(&["apply"]);
+
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert!(stdout(&output).contains("source `work`"));
+    assert!(stdout(&output).contains("does not exist"));
+    assert!(stdout(&output).contains("deployed 1 skill(s)"));
+    assert!(sandbox.target("me-codemode").exists());
+
+    let verified = sandbox.run(&["verify"]);
+
+    assert_eq!(code(&verified), 0, "{}", stderr(&verified));
+    assert!(stdout(&verified).contains("source `work`"));
+}
+
+#[test]
 fn apply_without_a_lock_for_a_remote_source_says_to_update() {
     let sandbox = Sandbox::new();
     sandbox.write_manifest("version = 1\n[sources.mp]\ngithub = \"mattpocock/skills\"\n");

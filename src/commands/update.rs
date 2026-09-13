@@ -70,22 +70,16 @@ pub fn run(paths: &Paths, source_id: Option<&str>, no_apply: bool) -> Result<Upd
 }
 
 fn select_sources<'a>(manifest: &'a Manifest, source_id: Option<&str>) -> Result<Vec<&'a Source>> {
-    match source_id {
-        None => Ok(manifest
-            .sources
-            .values()
-            .filter(|s| !s.transport.is_local())
-            .collect()),
-        Some(source_id) => {
-            let source = manifest.source(source_id)?;
-            if source.transport.is_local() {
-                return Err(Error::Configuration(format!(
-                    "source `{source_id}` is a local path; it is read directly by `apply`"
-                )));
-            }
-            Ok(vec![source])
-        }
+    let Some(source_id) = source_id else {
+        return Ok(manifest.remote().collect());
+    };
+    let source = manifest.source(source_id)?;
+    if !manifest.is_remote(source_id) {
+        return Err(Error::Configuration(format!(
+            "source `{source_id}` is a local path; it is read directly by `apply`"
+        )));
     }
+    Ok(vec![source])
 }
 
 fn stage(
@@ -273,12 +267,7 @@ fn merge(
 ) -> Lock {
     let mut sources = previous.sources;
     if source_id.is_none() {
-        sources.retain(|source_id, _| {
-            manifest
-                .sources
-                .get(source_id)
-                .is_some_and(|source| !source.transport.is_local())
-        });
+        sources.retain(|source_id, _| manifest.is_remote(source_id));
     }
     sources.extend(staged);
     Lock { sources }
@@ -286,10 +275,7 @@ fn merge(
 
 fn unlockable_selections(manifest: &Manifest, lock: &Lock) -> Vec<String> {
     let mut missing = Vec::new();
-    for source in manifest.sources.values() {
-        if source.transport.is_local() {
-            continue;
-        }
+    for source in manifest.remote() {
         for selected in source.skills.iter().flatten() {
             if lock.skill(&source.source_id, selected).is_none() {
                 missing.push(namespaced(&source.source_id, selected));

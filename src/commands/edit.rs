@@ -186,7 +186,15 @@ fn confirm_available(
     failures: &mut Failures,
 ) -> Result<()> {
     if source.transport.is_local() {
-        let root = crate::fetch::local_root(source)?;
+        // `add` and `remove` name this source outright, so an absent path is fatal
+        // here even though `apply` skips it.
+        let root = crate::fetch::local_root(source)?.ok_or_else(|| {
+            Error::Configuration(format!(
+                "source `{}`: {} does not exist",
+                source.source_id,
+                source.transport.url()
+            ))
+        })?;
         let discovery = skill::discover(&root, source.dir.as_deref())?;
         for skill in skills {
             if discovery.get(skill).is_none() {

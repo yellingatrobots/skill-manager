@@ -131,6 +131,28 @@ impl Manifest {
         Manifest::parse(&text)
     }
 
+    /// Sources that resolve to an upstream coordinate: `update` fetches them
+    /// into the store and records them in the lock.
+    pub fn remote(&self) -> impl Iterator<Item = &Source> {
+        self.sources
+            .values()
+            .filter(|source| !source.transport.is_local())
+    }
+
+    /// Sources read straight from their working tree when `apply` runs. They
+    /// never enter the lock or the store (ADR-0005).
+    pub fn local(&self) -> impl Iterator<Item = &Source> {
+        self.sources
+            .values()
+            .filter(|source| source.transport.is_local())
+    }
+
+    pub fn is_remote(&self, source_id: &str) -> bool {
+        self.sources
+            .get(source_id)
+            .is_some_and(|source| !source.transport.is_local())
+    }
+
     pub fn source(&self, source_id: &str) -> Result<&Source> {
         self.sources
             .get(source_id)
@@ -406,6 +428,27 @@ mod tests {
         assert_eq!(manifest.sources["likec4"].transport.kind(), "well_known");
         assert!(manifest.sources["me"].transport.is_local());
         assert!(manifest.sources["me"].selects("anything"));
+    }
+
+    #[test]
+    fn sources_partition_into_local_and_remote() {
+        let manifest = parse(
+            "version = 1\n\
+             [sources.mp]\ngithub = \"a/b\"\n\
+             [sources.kepano]\ngit = \"https://x/y.git\"\n\
+             [sources.likec4]\nwell_known = \"https://likec4.dev/\"\n\
+             [sources.me]\npath = \"/x\"\n",
+        );
+
+        let ids = |sources: Vec<&Source>| -> Vec<String> {
+            sources.into_iter().map(|s| s.source_id.clone()).collect()
+        };
+
+        assert_eq!(ids(manifest.remote().collect()), ["kepano", "likec4", "mp"]);
+        assert_eq!(ids(manifest.local().collect()), ["me"]);
+        assert!(manifest.is_remote("mp"));
+        assert!(!manifest.is_remote("me"));
+        assert!(!manifest.is_remote("absent"));
     }
 
     #[test]

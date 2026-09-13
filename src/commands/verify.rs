@@ -16,6 +16,7 @@ use std::fs;
 pub struct VerifyReport {
     pub checked: usize,
     pub problems: Failures,
+    pub skipped: Vec<String>,
 }
 
 pub fn run(paths: &Paths) -> Result<VerifyReport> {
@@ -49,6 +50,7 @@ pub fn run(paths: &Paths) -> Result<VerifyReport> {
     Ok(VerifyReport {
         checked: expected_names.len(),
         problems,
+        skipped: plan.skipped,
     })
 }
 

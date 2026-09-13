@@ -136,6 +136,7 @@ pub fn run(cli: Cli) -> Result<i32> {
         }
         Command::Verify => {
             let report = verify::run(&paths)?;
+            print_skipped(&report.skipped);
             if report.problems.is_empty() {
                 println!("verified {} deployed skill(s)", report.checked);
             }
@@ -156,6 +157,7 @@ fn print_apply(report: &apply::ApplyReport) {
         report.deployed.len(),
         report.generation
     );
+    print_skipped(&report.skipped);
     for target in &report.targets {
         if !target.linked.is_empty() || !target.removed.is_empty() {
             println!(
@@ -180,6 +182,13 @@ fn print_edit(verb: &str, report: &edit::EditReport) {
     }
     if let Some(applied) = &report.applied {
         print_apply(applied);
+    }
+}
+
+/// A local source that is absent on this machine is reported, not failed.
+fn print_skipped(skipped: &[String]) {
+    for note in skipped {
+        println!("{note}");
     }
 }
 

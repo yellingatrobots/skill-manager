@@ -50,6 +50,13 @@ Optional keys:
 A leading `~` in a path is expanded. Environment-variable interpolation is
 not supported.
 
+A `path` that does not exist is not an error: the source contributes no skills,
+`apply` and `verify` report that they skipped it, and both still exit zero. One
+manifest is shared across machines, and a local directory need not exist on all
+of them. A `path` that exists but is not a directory is a manifest mistake and
+aborts. `add` and `remove` name a source outright, so an absent `path` is fatal
+there.
+
 ## Validation
 
 A malformed manifest aborts the command before deployment. A discovered skill
