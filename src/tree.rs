@@ -255,17 +255,14 @@ mod tests {
     }
 
     #[test]
-    fn symlinks_are_rejected() {
-        let dir = fixture(&[("SKILL.md", "body")]);
-        std::os::unix::fs::symlink(dir.path().join("SKILL.md"), dir.path().join("link.md"))
+    fn symlinks_to_files_and_directories_are_rejected() {
+        let file = fixture(&[("SKILL.md", "body")]);
+        std::os::unix::fs::symlink(file.path().join("SKILL.md"), file.path().join("link.md"))
             .unwrap();
-        assert!(Tree::read(dir.path()).is_err());
-    }
+        assert!(Tree::read(file.path()).is_err());
 
-    #[test]
-    fn symlinked_directories_are_rejected() {
         let dir = fixture(&[("SKILL.md", "body"), ("ref/one.md", "one")]);
-        std::os::unix::fs::symlink(dir.path().join("ref"), dir.path().join("source_id")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("ref"), dir.path().join("linked")).unwrap();
         assert!(Tree::read(dir.path()).is_err());
     }
 

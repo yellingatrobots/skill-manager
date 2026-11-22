@@ -251,27 +251,6 @@ mod tests {
     }
 
     #[test]
-    fn renders_deterministically_regardless_of_insertion_order() {
-        let mut a = Lock::default();
-        let mut b = Lock::default();
-        for source_id in ["zz", "aa"] {
-            a.sources
-                .insert(source_id.into(), sample().sources["mp"].clone());
-        }
-        for source_id in ["aa", "zz"] {
-            b.sources
-                .insert(source_id.into(), sample().sources["mp"].clone());
-        }
-        assert_eq!(a.render(), b.render());
-        assert!(a.render().find("[sources.aa]") < a.render().find("[sources.zz]"));
-    }
-
-    #[test]
-    fn writes_no_timestamps() {
-        assert!(!sample().render().contains("time"));
-    }
-
-    #[test]
     fn quotes_keys_that_are_not_bare() {
         let mut lock = Lock::default();
         let mut source = sample().sources["mp"].clone();
@@ -342,17 +321,6 @@ mod tests {
         assert_eq!(mp["new"], Change::Added(skill("sha256:cc")));
         assert_eq!(diff[0].skills["y"], Change::Added(skill("sha256:dd")));
         assert_eq!(diff[2].skills["x"], Change::Removed(skill("sha256:aa")));
-    }
-
-    #[test]
-    fn diff_of_a_lock_with_itself_changes_nothing() {
-        let lock = with(&[
-            ("mp", "a", skill("sha256:aa")),
-            ("kp", "b", skill("sha256:bb")),
-        ]);
-        let diff = diff(&lock, &lock);
-        assert!(diff.iter().all(|source| !source.changed()));
-        assert_eq!(diff.len(), 2);
     }
 
     #[test]

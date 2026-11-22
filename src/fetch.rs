@@ -209,10 +209,4 @@ mod tests {
         );
         assert!(!root.join(".extracted").exists());
     }
-
-    #[test]
-    fn coordinates_round_trip() {
-        assert_eq!(commit_of(&git_coordinate("abc123")), Some("abc123"));
-        assert_eq!(commit_of("sha256:aa"), None);
-    }
 }

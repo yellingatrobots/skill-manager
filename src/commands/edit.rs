@@ -496,8 +496,8 @@ mod tests {
     #[test]
     fn selections_must_be_namespaced() {
         assert!(parse_selection("handoff").is_err());
-        assert!(parse_selection(":handoff").is_err());
-        assert!(parse_selection("mp:").is_err());
+        assert!(parse_selection("-handoff").is_err());
+        assert!(parse_selection("mp-").is_err());
         assert_eq!(
             parse_selection("mp-handoff").unwrap(),
             Selection {

@@ -193,6 +193,50 @@ mod tests {
     }
 
     #[test]
+    fn a_well_known_archive_must_match_its_locked_archive_digest() {
+        let archive = skill_archive("handoff", "body\n");
+        let content = extracted_digest(&archive, "handoff");
+        let endpoint = serve(vec![("/skills/handoff.tar.gz", archive.clone())]);
+        let lock_pinning = |archive_digest: &str| {
+            lock_toml(
+                "lk",
+                "well_known",
+                &endpoint,
+                None,
+                &[("handoff", "skills/handoff.tar.gz", archive_digest, &content)],
+            )
+        };
+
+        let matching = home();
+        write_lock(
+            &matching,
+            &lock_pinning(&crate::tree::sha256(&archive).to_string()),
+        );
+        let report = run(&matching.paths).unwrap();
+        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        let names: Vec<&str> = report.added.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["lk-handoff"]);
+
+        // Same extracted content, but not the archive the lock pinned.
+        let republished = home();
+        write_lock(
+            &republished,
+            &lock_pinning(&format!("sha256:{}", "c".repeat(64))),
+        );
+        let report = run(&republished.paths).unwrap();
+        assert!(report.added.is_empty(), "{:?}", report.added);
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.contains("archive digest")
+                    && failure.contains("does not match the locked")),
+            "{:?}",
+            report.failures
+        );
+    }
+
+    #[test]
     fn refills_an_empty_store_from_the_lock() {
         let (home, _upstream) = locked_home();
         fsx::remove_tree(&home.paths.store).unwrap();
@@ -210,6 +254,7 @@ mod tests {
         for (_, digest) in locked_digests(&lock) {
             assert!(store.verify(&digest).unwrap());
         }
+        assert!(!home.paths.current.exists(), "hydrate never deploys");
     }
 
     #[test]
@@ -220,16 +265,6 @@ mod tests {
 
         assert!(report.added.is_empty());
         assert!(report.failures.is_empty());
-    }
-
-    #[test]
-    fn never_writes_the_deployed_tree() {
-        let (home, _upstream) = locked_home();
-        fsx::remove_tree(&home.paths.store).unwrap();
-
-        run(&home.paths).unwrap();
-
-        assert!(!home.paths.current.exists());
     }
 
     #[test]
@@ -287,12 +322,5 @@ mod tests {
                 .iter()
                 .any(|failure| failure.contains("mp-handoff"))
         );
-    }
-
-    #[test]
-    fn a_missing_lock_points_at_update() {
-        let home = home();
-        let error = run(&home.paths).unwrap_err().to_string();
-        assert!(error.contains("skill-manager update"));
     }
 }

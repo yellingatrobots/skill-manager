@@ -68,49 +68,26 @@ mod tests {
     fn resolves_the_documented_locations() {
         let paths = Paths::new(
             Path::new("/home/t"),
-            Path::new("/home/t/.config"),
-            Path::new("/home/t/.local/share"),
+            Path::new("/config"),
+            Path::new("/data"),
         );
         assert_eq!(
             paths.manifest,
-            Path::new("/home/t/.config/skill-manager/skills.toml")
+            Path::new("/config/skill-manager/skills.toml")
         );
-        assert_eq!(
-            paths.lock,
-            Path::new("/home/t/.config/skill-manager/skills.lock")
-        );
-        assert_eq!(
-            paths.store,
-            Path::new("/home/t/.local/share/skill-manager/store")
-        );
+        assert_eq!(paths.lock, Path::new("/config/skill-manager/skills.lock"));
+        assert_eq!(paths.store, Path::new("/data/skill-manager/store"));
         assert_eq!(
             paths.current,
-            Path::new("/home/t/.local/share/skill-manager/deployed/current")
+            Path::new("/data/skill-manager/deployed/current")
         );
-        assert_eq!(
-            paths.deployed,
-            Path::new("/home/t/.local/share/skill-manager/deployed")
-        );
+        assert_eq!(paths.deployed, Path::new("/data/skill-manager/deployed"));
         assert_eq!(
             paths.targets,
             [
                 Path::new("/home/t/.claude/skills"),
                 Path::new("/home/t/.agents/skills")
             ]
-        );
-    }
-
-    #[test]
-    fn honours_the_xdg_base_directories() {
-        let paths = Paths::new(
-            Path::new("/home/t"),
-            Path::new("/config"),
-            Path::new("/data"),
-        );
-        assert_eq!(paths.store, Path::new("/data/skill-manager/store"));
-        assert_eq!(
-            paths.manifest,
-            Path::new("/config/skill-manager/skills.toml")
         );
     }
 }

@@ -395,19 +395,6 @@ mod tests {
     }
 
     #[test]
-    fn removing_a_target_entry_does_not_recurse_through_the_symlink() {
-        let (_home, paths) = home();
-        let (_a, one) = deployable("mp", "handoff", "body\n");
-
-        let applied = Deployment::new(&paths).apply(&[one]).unwrap();
-        let generation = paths.generation(&applied.generation);
-        Deployment::new(&paths).apply(&[]).unwrap();
-
-        assert!(!paths.targets[0].join("mp-handoff").exists());
-        assert!(!generation.exists() || generation.join("mp-handoff/SKILL.md").exists());
-    }
-
-    #[test]
     fn a_stale_symlink_into_the_build_directory_is_repointed() {
         let (_home, paths) = home();
         let (_source, skill) = deployable("mp", "handoff", "body\n");

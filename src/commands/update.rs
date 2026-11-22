@@ -536,6 +536,7 @@ mod tests {
         );
         write_manifest(&home, &both);
         run(&home.paths, None, false).unwrap();
+        assert!(home.paths.targets[0].join("kp-tdd").exists());
 
         write_manifest(
             &home,
@@ -549,7 +550,7 @@ mod tests {
         let lock = Lock::read(&home.paths.lock).unwrap();
         assert!(lock.sources.contains_key("mp"));
         assert!(!lock.sources.contains_key("kp"));
-        assert!(!home.paths.targets[0].join("kp:tdd").exists());
+        assert!(!home.paths.targets[0].join("kp-tdd").exists());
     }
 
     #[test]
@@ -559,7 +560,8 @@ mod tests {
             &home,
             "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
         );
-        assert!(run(&home.paths, Some("me"), false).is_err());
+        let error = run(&home.paths, Some("me"), false).unwrap_err().to_string();
+        assert!(error.contains("is a local path"), "{error}");
     }
 
     #[test]

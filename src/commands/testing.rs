@@ -124,3 +124,61 @@ pub fn git_commit(origin: &TempDir, files: &[(&str, &str)]) {
 pub fn git_tag(origin: &TempDir, tag: &str) {
     git(origin.path(), &["tag", tag]);
 }
+
+/// A gzipped tarball of one skill directory, as a well-known endpoint serves it.
+pub fn skill_archive(name: &str, body: &str) -> Vec<u8> {
+    use flate2::{Compression, write::GzEncoder};
+    let contents = skill_text(name, body);
+    let mut builder = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
+    let mut header = tar::Header::new_gnu();
+    header.set_size(contents.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    builder
+        .append_data(&mut header, format!("{name}/SKILL.md"), contents.as_bytes())
+        .unwrap();
+    builder.into_inner().unwrap().finish().unwrap()
+}
+
+/// The content digest of what `archive` extracts to, as the lock records it.
+pub fn extracted_digest(archive: &[u8], name: &str) -> String {
+    let temp = TempDir::new().unwrap();
+    crate::fetch::install_archive(archive, name, temp.path()).unwrap();
+    Tree::read(temp.path().join(name))
+        .unwrap()
+        .digest()
+        .unwrap()
+        .to_string()
+}
+
+/// Serves `files` by request path over plain HTTP on localhost until the test
+/// process exits, and returns the base URL.
+pub fn serve(files: Vec<(&'static str, Vec<u8>)>) -> String {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request = String::new();
+            reader.read_line(&mut request).unwrap();
+            let mut header = String::new();
+            while reader.read_line(&mut header).unwrap() > 2 {
+                header.clear();
+            }
+            let path = request.split_whitespace().nth(1).unwrap_or_default();
+            let (status, body) = match files.iter().find(|(served, _)| *served == path) {
+                Some((_, body)) => ("200 OK", body.as_slice()),
+                None => ("404 Not Found", &b""[..]),
+            };
+            let head = format!(
+                "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(head.as_bytes()).unwrap();
+            stream.write_all(body).unwrap();
+        }
+    });
+    base
+}

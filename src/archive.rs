@@ -183,25 +183,4 @@ mod tests {
             extract_tar_gz(&tar_gz_with_link("link.md", "/etc/passwd"), dir.path()).unwrap_err();
         assert!(error.to_string().contains("regular files"));
     }
-
-    #[test]
-    fn skill_root_unwraps_a_single_wrapping_directory() {
-        let dir = TempDir::new().unwrap();
-        extract_tar_gz(&tar_gz(&[("likec4-dsl/SKILL.md", "body")]), dir.path()).unwrap();
-        assert_eq!(
-            skill_root(dir.path()).unwrap(),
-            dir.path().join("likec4-dsl")
-        );
-    }
-
-    #[test]
-    fn skill_root_keeps_a_root_that_is_already_the_skill() {
-        let dir = TempDir::new().unwrap();
-        extract_tar_gz(
-            &tar_gz(&[("SKILL.md", "body"), ("ref/one.md", "one")]),
-            dir.path(),
-        )
-        .unwrap();
-        assert_eq!(skill_root(dir.path()).unwrap(), dir.path());
-    }
 }

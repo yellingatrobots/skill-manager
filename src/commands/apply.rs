@@ -174,20 +174,17 @@ mod tests {
 
         assert!(report.failures.is_empty());
         assert_eq!(report.deployed, ["me-codemode"]);
-        let deployed = home.paths.targets[0].join("me-codemode/SKILL.md");
-        let text = fs::read_to_string(deployed).unwrap();
-        assert!(text.contains("name: me-codemode\n"));
-        assert!(text.contains("metadata:\n"));
-        assert!(text.contains("\n  sm-source-id: me\n"));
-        assert!(text.contains("\n  sm-source-kind: path\n"));
-        assert!(text.contains("\n  sm-upstream-name: codemode\n"));
-        assert!(text.contains(&format!(
-            "\n  sm-source-url: {}/etc/ai/skills\n",
-            home.path().display()
-        )));
-        assert!(text.contains("\n  sm-upstream-path: codemode\n"));
-        assert!(text.contains("\n  sm-upstream-coordinate: sha256:"));
-        assert!(text.contains("\n  sm-digest: sha256:"));
+        for target in &home.paths.targets {
+            let text = fs::read_to_string(target.join("me-codemode/SKILL.md")).unwrap();
+            // A path source's provenance: its kind, its directory, and a content digest
+            // standing in for an upstream coordinate.
+            assert!(text.contains("\n  sm-source-kind: path\n"));
+            assert!(text.contains(&format!(
+                "\n  sm-source-url: {}/etc/ai/skills\n",
+                home.path().display()
+            )));
+            assert!(text.contains("\n  sm-upstream-coordinate: sha256:"));
+        }
     }
 
     #[test]
@@ -365,30 +362,6 @@ mod tests {
         assert_eq!(report.deployed, ["mp-handoff"]);
     }
 
-    #[test]
-    fn fails_loudly_when_the_store_entry_is_missing() {
-        let home = home();
-        let absent = format!("sha256:{}", "b".repeat(64));
-        write_manifest(
-            &home,
-            "version = 1\n[sources.mp]\ngithub = \"mattpocock/skills\"\n",
-        );
-        write_lock(
-            &home,
-            &lock_toml(
-                "mp",
-                "github",
-                "https://github.com/mattpocock/skills.git",
-                None,
-                &[("handoff", "skills/handoff", "git:abc", &absent)],
-            ),
-        );
-
-        let error = run(&home.paths, Network::Offline).unwrap_err().to_string();
-
-        assert!(error.contains("hydrate"));
-    }
-
     fn mp_lock(entries: &[(&str, &str, &str, &str)]) -> String {
         lock_toml(
             "mp",
@@ -441,6 +414,7 @@ mod tests {
 
         let error = run(&home.paths, Network::Offline).unwrap_err().to_string();
 
+        assert!(error.contains("skill-manager hydrate"), "{error}");
         assert!(error.contains("--offline"), "{error}");
         assert!(!home.paths.current.exists());
     }

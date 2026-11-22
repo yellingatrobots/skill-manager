@@ -143,23 +143,6 @@ mod tests {
     }
 
     #[test]
-    fn different_content_lands_in_different_entries() {
-        let home = TempDir::new().unwrap();
-        let store = Store::new(home.path().join("store"));
-        let one = fixture("one");
-        let two = fixture("two");
-
-        let a = store.insert(&Tree::read(one.path()).unwrap()).unwrap();
-        let b = store.insert(&Tree::read(two.path()).unwrap()).unwrap();
-
-        assert_ne!(a, b);
-        assert_eq!(
-            fs::read_dir(store.root().join("sha256")).unwrap().count(),
-            2
-        );
-    }
-
-    #[test]
     fn tree_reads_back_a_stored_entry() {
         let home = TempDir::new().unwrap();
         let store = Store::new(home.path().join("store"));

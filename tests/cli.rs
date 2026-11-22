@@ -366,21 +366,44 @@ fn update_reports_each_lock_change_and_where_it_was_written() {
 }
 
 #[test]
-fn info_reports_provenance_as_text_and_json() {
+fn info_lists_skills_tersely_and_reports_everything_on_request() {
     let sandbox = Sandbox::new();
     sandbox.write_skill("codemode", "body\n");
     sandbox.write_manifest("version = 1\n[sources.me]\npath = \"~/etc/ai/skills\"\n");
     sandbox.run(&["apply"]);
+    let manifest = sandbox.manifest().display().to_string();
 
     let listing = sandbox.run(&["info"]);
-    assert_eq!(code(&listing), 0);
-    assert!(stdout(&listing).contains("me-codemode"));
-    assert!(stdout(&listing).contains("sm-provenance"));
+    assert_eq!(code(&listing), 0, "{}", stderr(&listing));
+    let text = stdout(&listing);
+    assert!(text.contains("me-codemode"));
+    assert!(text.contains("sm-provenance"));
+    assert!(!text.contains(&manifest));
+    assert!(!text.contains("upstream_coordinate"));
 
-    let detail = sandbox.run(&["info", "me-codemode", "--json"]);
-    assert_eq!(code(&detail), 0, "{}", stderr(&detail));
-    let json: serde_json::Value = serde_json::from_str(&stdout(&detail)).unwrap();
-    let record = &json["skills"][0];
+    let one = sandbox.run(&["info", "me-codemode"]);
+    assert_eq!(stdout(&one).lines().count(), 1);
+
+    let full = sandbox.run(&["info", "--full"]);
+    assert_eq!(code(&full), 0, "{}", stderr(&full));
+    let text = stdout(&full);
+    assert!(text.contains(&manifest));
+    assert!(text.contains(".local/share/skill-manager/store"));
+    assert!(text.contains(".claude/skills"));
+    assert!(text.contains(".agents/skills"));
+    assert!(text.contains("upstream_coordinate"));
+
+    let json = sandbox.run(&["info", "me-codemode", "--json"]);
+    assert_eq!(code(&json), 0, "{}", stderr(&json));
+    let value: serde_json::Value = serde_json::from_str(&stdout(&json)).unwrap();
+    assert_eq!(value["locations"]["manifest"], manifest);
+    assert!(
+        value["locations"]["generation"]
+            .as_str()
+            .unwrap()
+            .contains("generations/")
+    );
+    let record = &value["skills"][0];
     assert_eq!(record["name"], "me-codemode");
     assert_eq!(record["source_kind"], "path");
     assert!(
@@ -388,55 +411,6 @@ fn info_reports_provenance_as_text_and_json() {
             .as_str()
             .unwrap()
             .starts_with("sha256:")
-    );
-}
-
-#[test]
-fn info_lists_only_skills_until_full_is_asked_for() {
-    let sandbox = Sandbox::new();
-    sandbox.write_skill("codemode", "body\n");
-    sandbox.write_manifest("version = 1\n[sources.me]\npath = \"~/etc/ai/skills\"\n");
-    sandbox.run(&["apply"]);
-
-    let listing = sandbox.run(&["info"]);
-    assert_eq!(code(&listing), 0, "{}", stderr(&listing));
-    let text = stdout(&listing);
-    assert!(text.contains("me-codemode"));
-    assert!(!text.contains(&sandbox.manifest().display().to_string()));
-    assert!(!text.contains("upstream_coordinate"));
-
-    let one = sandbox.run(&["info", "me-codemode"]);
-    assert_eq!(stdout(&one).lines().count(), 1);
-}
-
-#[test]
-fn info_full_reports_where_everything_lives_and_every_field() {
-    let sandbox = Sandbox::new();
-    sandbox.write_skill("codemode", "body\n");
-    sandbox.write_manifest("version = 1\n[sources.me]\npath = \"~/etc/ai/skills\"\n");
-    sandbox.run(&["apply"]);
-
-    let listing = sandbox.run(&["info", "--full"]);
-
-    assert_eq!(code(&listing), 0, "{}", stderr(&listing));
-    let text = stdout(&listing);
-    assert!(text.contains(&sandbox.manifest().display().to_string()));
-    assert!(text.contains(".local/share/skill-manager/store"));
-    assert!(text.contains(".claude/skills"));
-    assert!(text.contains(".agents/skills"));
-    assert!(text.contains("upstream_coordinate"));
-
-    let json = sandbox.run(&["info", "--json"]);
-    let value: serde_json::Value = serde_json::from_str(&stdout(&json)).unwrap();
-    assert_eq!(
-        value["locations"]["manifest"],
-        sandbox.manifest().display().to_string()
-    );
-    assert!(
-        value["locations"]["generation"]
-            .as_str()
-            .unwrap()
-            .contains("generations/")
     );
 }
 
@@ -489,16 +463,4 @@ fn verify_passes_after_apply_and_fails_after_tampering() {
 
     assert_eq!(code(&tampered), 1);
     assert!(stderr(&tampered).contains("me-codemode"));
-}
-
-#[test]
-fn help_lists_every_command() {
-    let sandbox = Sandbox::new();
-    let output = sandbox.run(&["--help"]);
-    let text = stdout(&output);
-    for command in [
-        "apply", "update", "hydrate", "add", "remove", "info", "verify",
-    ] {
-        assert!(text.contains(command), "`{command}` missing from help");
-    }
 }

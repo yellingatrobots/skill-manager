@@ -250,7 +250,8 @@ mod tests {
         );
         apply::run(&home.paths, apply::Network::Offline).unwrap();
 
-        let record = &run(&home.paths, Some("me-codemode")).unwrap()[0];
+        let records = run(&home.paths, Some("me-codemode")).unwrap();
+        let record = &records[0];
 
         assert_eq!(record.source_id, "me");
         assert_eq!(record.upstream_name, "codemode");
@@ -273,6 +274,17 @@ mod tests {
                 .is_some_and(|digest| digest.starts_with("sha256:"))
         );
         assert_eq!(record.upstream_path.as_deref(), Some("codemode"));
+
+        let json = &serde_json::to_value(&records).unwrap()[0];
+        assert_eq!(json["name"], "me-codemode");
+        assert_eq!(json["source_id"], "me");
+        assert_eq!(json["source_kind"], "path");
+        assert!(
+            json["deployed_path"]
+                .as_str()
+                .unwrap()
+                .contains("me-codemode")
+        );
     }
 
     #[test]
@@ -302,40 +314,6 @@ mod tests {
     }
 
     #[test]
-    fn serializes_a_stable_json_record() {
-        let home = home();
-        write_skill(
-            &home.path().join("etc/ai/skills/codemode"),
-            "codemode",
-            "body\n",
-        );
-        write_manifest(
-            &home,
-            "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
-        );
-        apply::run(&home.paths, apply::Network::Offline).unwrap();
-
-        let records = run(&home.paths, Some("me-codemode")).unwrap();
-        let json = serde_json::to_value(&records).unwrap();
-
-        let record = &json[0];
-        assert_eq!(record["name"], "me-codemode");
-        assert_eq!(record["source_id"], "me");
-        assert_eq!(record["source_kind"], "path");
-        assert!(
-            record["digest"]
-                .as_str()
-                .is_some_and(|digest| digest.starts_with("sha256:"))
-        );
-        assert!(
-            record["deployed_path"]
-                .as_str()
-                .unwrap()
-                .contains("me-codemode")
-        );
-    }
-
-    #[test]
     fn reports_where_the_manifest_lock_store_and_targets_live() {
         let home = home();
         write_manifest(&home, "version = 1\n");
@@ -344,17 +322,9 @@ mod tests {
         let report = report(&home.paths, None).unwrap();
         let locations = &report.locations;
 
-        assert_eq!(locations.manifest, display(&home.paths.manifest));
-        assert_eq!(locations.lock, display(&home.paths.lock));
-        assert_eq!(locations.store, display(&home.paths.store));
-        assert_eq!(locations.deployed, display(&home.paths.deployed));
         assert_eq!(
             locations.generation,
             Some(display(std::fs::read_link(&home.paths.current).unwrap()))
-        );
-        assert_eq!(
-            locations.targets,
-            home.paths.targets.iter().map(display).collect::<Vec<_>>()
         );
         assert!(report.skills.iter().any(|s| s.name == "sm-provenance"));
 

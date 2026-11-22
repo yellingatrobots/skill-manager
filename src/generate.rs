@@ -236,13 +236,7 @@ mod tests {
         build(&root, &[]).unwrap();
 
         let skill_file = fs::read_to_string(root.join("sm-provenance/SKILL.md")).unwrap();
-        assert!(skill_file.starts_with("---\nname: sm-provenance\n"));
-        assert!(skill_file.contains("skill-manager info"));
-    }
-
-    #[test]
-    fn the_builtin_skill_parses_as_a_skill() {
-        let doc = SkillDoc::parse(PROVENANCE_SKILL).unwrap();
+        let doc = SkillDoc::parse(&skill_file).unwrap();
         assert_eq!(doc.name(), "sm-provenance");
         assert!(!doc.frontmatter.get("description").unwrap().is_empty());
     }

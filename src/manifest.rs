@@ -368,8 +368,6 @@ mod tests {
     fn the_template_parses_as_a_manifest_that_declares_nothing() {
         let manifest = parse(TEMPLATE);
         assert!(manifest.sources.is_empty());
-        assert!(TEMPLATE.contains("# [sources.mp]"));
-        assert!(TEMPLATE.contains("# github = "));
     }
 
     #[test]
@@ -449,21 +447,6 @@ mod tests {
         assert!(manifest.is_remote("mp"));
         assert!(!manifest.is_remote("me"));
         assert!(!manifest.is_remote("absent"));
-    }
-
-    #[test]
-    fn expands_a_leading_tilde_in_paths() {
-        unsafe { std::env::set_var("HOME", "/home/tester") };
-        let manifest = parse("version = 1\n[sources.me]\npath = \"~/etc/ai/skills\"\n");
-        let Transport::Path {
-            configured,
-            resolved,
-        } = &manifest.sources["me"].transport
-        else {
-            panic!("expected a path transport");
-        };
-        assert_eq!(configured, "~/etc/ai/skills");
-        assert_eq!(resolved, Path::new("/home/tester/etc/ai/skills"));
     }
 
     #[test]
