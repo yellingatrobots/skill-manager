@@ -40,8 +40,9 @@ path = "~/etc/ai/skills"
 
 ```sh
 skill-manager update            # resolve, fetch, rewrite the lock, deploy
-skill-manager apply             # deploy from manifest + lock + store, offline
-skill-manager hydrate           # fetch exactly what the lock pins (fresh machine)
+skill-manager apply             # deploy from manifest + lock + store, fetching what the lock pins if missing
+skill-manager apply --offline   # same, but never fetch; a missing store entry aborts
+skill-manager hydrate           # only fetch what the lock pins, without deploying
 skill-manager add mp-wizard     # select a skill, then deploy
 skill-manager remove mp-wizard  # deselect a skill, then deploy
 skill-manager info [mp-tdd]     # what is deployed (--full for locations and metadata, --json)

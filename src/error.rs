@@ -27,8 +27,13 @@ pub enum Error {
     #[error("{0}")]
     Configuration(String),
 
-    #[error("store entry {0} is missing; run `skill-manager hydrate`")]
+    #[error(
+        "store entry {0} is missing; run `skill-manager hydrate`, or `skill-manager apply` without `--offline`"
+    )]
     MissingStoreEntry(String),
+
+    #[error("could not hydrate the store from the lock: {0}")]
+    Hydrate(String),
 
     #[error("{0}")]
     Archive(String),

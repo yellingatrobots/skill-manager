@@ -1,10 +1,16 @@
 # Command contract
 
-## `apply`
+## `apply [--offline]`
 
-Offline. Validates the manifest and materializes a complete generated tree
-from manifest plus lock plus store, with local-path sources read directly from
-their working trees. It writes neither lock nor store.
+Validates the manifest and materializes a complete generated tree from
+manifest plus lock plus store, with local-path sources read directly from
+their working trees. It never writes the lock and never resolves refs.
+
+Before building, `apply` hydrates: it fetches the locked content of every
+selected remote skill whose store entry is absent, exactly as `hydrate` would,
+and verifies it against the locked digest. Any hydrate failure aborts before
+the deployed tree changes. With `--offline` it never fetches, and a missing
+store entry aborts with an instruction to run `hydrate` (ADR-0014).
 
 Before changing the deployed tree, `apply` verifies that each remote lock entry
 matches the manifest's transport, URL, `ref`, and `dir`, and that every
@@ -83,7 +89,8 @@ Every mutating command reports on stdout each change it made and where:
 - the lock file written, and per source each skill entry added (`+`), changed
   (`~`, naming the fields that moved, `before -> after`), or removed (`-`),
   with a count of unchanged entries (`update`, `add`);
-- each new store entry and the skill it holds (`update`, `add`, `hydrate`);
+- each new store entry and the skill it holds (`update`, `add`, `hydrate`,
+  and `apply` when it hydrates);
 - for every apply: where `current` points, each deployed skill added, changed,
   or removed against the previous generation, the links made and removed in
   each target, and every generation pruned.

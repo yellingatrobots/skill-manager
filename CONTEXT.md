@@ -40,7 +40,7 @@ _Avoid_: lockfile registry
 
 **Store**:
 Immutable, content-addressed storage of pristine upstream skill content.
-Written only by `update` and `hydrate`; never edited.
+Written only by `update`, `hydrate`, and a hydrating `apply`; never edited.
 _Avoid_: cache, originals repository, vendor directory
 
 **Deployed tree**:

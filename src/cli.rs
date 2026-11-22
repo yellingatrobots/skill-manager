@@ -22,8 +22,13 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Materialize the deployed tree from the manifest, lock, and store. Offline.
-    Apply,
+    /// Materialize the deployed tree from the manifest, lock, and store,
+    /// fetching locked content missing from the store.
+    Apply {
+        /// Never fetch; fail if a locked store entry is missing.
+        #[arg(long)]
+        offline: bool,
+    },
 
     /// Resolve and fetch remote sources, then rewrite the lock.
     Update {
@@ -82,8 +87,13 @@ pub fn run(cli: Cli) -> Result<i32> {
         return Ok(EXIT_OK);
     }
     match cli.command {
-        Command::Apply => {
-            let report = apply::run(&paths)?;
+        Command::Apply { offline } => {
+            let network = if offline {
+                apply::Network::Offline
+            } else {
+                apply::Network::Allowed
+            };
+            let report = apply::run(&paths, network)?;
             print_apply(&report);
             Ok(exit_code(&report.failures))
         }
@@ -166,6 +176,12 @@ fn print_apply(report: &apply::ApplyReport) {
         report.generation
     );
     print_skipped(&report.skipped);
+    if !report.hydrated.is_empty() {
+        println!("hydrated {} skill(s) from the lock", report.hydrated.len());
+        for (name, path) in &report.hydrated {
+            println!("  + {name}  {}", path.display());
+        }
+    }
     if report.switched {
         println!(
             "  current: {} -> {}",

@@ -127,7 +127,7 @@ pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
         .into_iter()
         .filter(|source| source.changed() || wanted.contains_key(&source.source_id))
         .collect();
-    let applied = apply::run_with(paths, &manifest, &staged)?;
+    let applied = apply::run_with(paths, &manifest, &staged, apply::Network::Allowed)?;
     for failure in applied.failures.iter() {
         failures.push(failure);
     }
@@ -188,7 +188,7 @@ pub fn remove(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     let manifest = Manifest::parse(&edited)?;
     let manifest_written = fsx::write_atomic(&paths.manifest, edited.as_bytes())?;
     let lock = Lock::read(&paths.lock)?;
-    let applied = apply::run_with(paths, &manifest, &lock)?;
+    let applied = apply::run_with(paths, &manifest, &lock, apply::Network::Allowed)?;
     let mut failures = Failures::new();
     for failure in applied.failures.iter() {
         failures.push(failure);
@@ -444,7 +444,7 @@ mod tests {
     #[test]
     fn remove_deselects_and_undeploys() {
         let home = local_home(&["codemode", "tdd"], "\"codemode\", \"tdd\"");
-        apply::run(&home.paths).unwrap();
+        apply::run(&home.paths, apply::Network::Offline).unwrap();
 
         let report = remove(&home.paths, &["me-tdd".to_string()]).unwrap();
 

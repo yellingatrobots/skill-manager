@@ -4,7 +4,7 @@ use crate::error::{Error, Failures, Result};
 use crate::fetch;
 use crate::generate::namespaced;
 use crate::git;
-use crate::lock::{self, LockedSkill, LockedSource};
+use crate::lock::{self, Lock, LockedSkill, LockedSource};
 use crate::paths::Paths;
 use crate::store::Store;
 use crate::tree::{Digest, Tree};
@@ -20,24 +20,28 @@ pub struct HydrateReport {
 
 pub fn run(paths: &Paths) -> Result<HydrateReport> {
     let locked = lock::read_required(&paths.lock)?;
-    let store = Store::new(&paths.store);
+    Ok(fill(&locked, &Store::new(&paths.store)))
+}
+
+/// Fetches every store entry `locked` references that `store` lacks.
+pub fn fill(locked: &Lock, store: &Store) -> HydrateReport {
     let mut report = HydrateReport::default();
 
     for (source_id, source) in &locked.sources {
-        let missing = missing_skills(source, &store, &mut report);
+        let missing = missing_skills(source, store, &mut report);
         if missing.is_empty() {
             continue;
         }
         let outcome = match source.kind.as_str() {
-            "well_known" => hydrate_archives(source_id, source, &missing, &store, &mut report),
-            _ => hydrate_git(source_id, source, &missing, &store, &mut report),
+            "well_known" => hydrate_archives(source_id, source, &missing, store, &mut report),
+            _ => hydrate_git(source_id, source, &missing, store, &mut report),
         };
         if let Err(error) = outcome {
             report.failures.push(format!("{source_id}: {error}"));
         }
     }
 
-    Ok(report)
+    report
 }
 
 /// Skills whose store entry is absent; unusable digests are reported at once.

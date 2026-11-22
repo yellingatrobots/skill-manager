@@ -66,7 +66,12 @@ pub fn run(paths: &Paths, source_id: Option<&str>, no_apply: bool) -> Result<Upd
     let applied = if no_apply || !unlockable.is_empty() {
         None
     } else {
-        Some(apply::run_with(paths, &manifest, &lock)?)
+        Some(apply::run_with(
+            paths,
+            &manifest,
+            &lock,
+            apply::Network::Allowed,
+        )?)
     };
     if let Some(report) = &applied {
         for failure in report.failures.iter() {

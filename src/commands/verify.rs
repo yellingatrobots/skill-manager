@@ -231,7 +231,7 @@ mod tests {
             &home,
             "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
         );
-        apply::run(&home.paths).unwrap();
+        apply::run(&home.paths, apply::Network::Offline).unwrap();
         home
     }
 

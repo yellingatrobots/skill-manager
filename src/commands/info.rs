@@ -228,7 +228,7 @@ mod tests {
             &home,
             "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
         );
-        apply::run(&home.paths).unwrap();
+        apply::run(&home.paths, apply::Network::Offline).unwrap();
 
         let records = run(&home.paths, None).unwrap();
 
@@ -248,7 +248,7 @@ mod tests {
             &home,
             "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
         );
-        apply::run(&home.paths).unwrap();
+        apply::run(&home.paths, apply::Network::Offline).unwrap();
 
         let record = &run(&home.paths, Some("me-codemode")).unwrap()[0];
 
@@ -313,7 +313,7 @@ mod tests {
             &home,
             "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
         );
-        apply::run(&home.paths).unwrap();
+        apply::run(&home.paths, apply::Network::Offline).unwrap();
 
         let records = run(&home.paths, Some("me-codemode")).unwrap();
         let json = serde_json::to_value(&records).unwrap();
@@ -339,7 +339,7 @@ mod tests {
     fn reports_where_the_manifest_lock_store_and_targets_live() {
         let home = home();
         write_manifest(&home, "version = 1\n");
-        apply::run(&home.paths).unwrap();
+        apply::run(&home.paths, apply::Network::Offline).unwrap();
 
         let report = report(&home.paths, None).unwrap();
         let locations = &report.locations;
@@ -367,7 +367,7 @@ mod tests {
     fn an_unknown_name_is_an_error() {
         let home = home();
         write_manifest(&home, "version = 1\n");
-        apply::run(&home.paths).unwrap();
+        apply::run(&home.paths, apply::Network::Offline).unwrap();
         assert!(
             run(&home.paths, Some("me-absent"))
                 .unwrap_err()
@@ -399,7 +399,7 @@ mod tests {
             &home,
             "version = 1\n[sources.me]\npath = \"{home}/etc/ai/skills\"\n",
         );
-        apply::run(&home.paths).unwrap();
+        apply::run(&home.paths, apply::Network::Offline).unwrap();
 
         let record = &run(&home.paths, Some("me-codemode")).unwrap()[0];
 

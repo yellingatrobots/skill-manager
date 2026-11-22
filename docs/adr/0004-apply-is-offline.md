@@ -1,5 +1,8 @@
 # `apply` never touches the network
 
+> Amended by ADR-0014: `apply` hydrates missing store entries unless
+> `--offline` is passed.
+
 `apply` must produce the same result from the same local inputs every time. If
 it could fetch, a moving `main` could change deployed skills between runs.
 `apply` is therefore offline and deterministic from manifest plus lock plus

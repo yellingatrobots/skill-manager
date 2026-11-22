@@ -251,6 +251,37 @@ fn an_invalid_skill_is_skipped_and_the_command_exits_non_zero() {
 }
 
 #[test]
+fn apply_hydrates_a_missing_store_unless_offline() {
+    let sandbox = Sandbox::new();
+    let upstream = git_origin(&[("handoff/SKILL.md", &skill_text("handoff", "body\n"))]);
+    sandbox.write_manifest(&format!(
+        "version = 1\n[sources.mp]\ngit = \"{}\"\n",
+        upstream.path().display()
+    ));
+    assert_eq!(code(&sandbox.run(&["update", "--no-apply"])), 0);
+    let store = sandbox.path().join(".local/share/skill-manager/store");
+    remove_read_only_tree(&store);
+
+    let offline = sandbox.run(&["apply", "--offline"]);
+
+    assert_eq!(code(&offline), 2, "{}", stdout(&offline));
+    assert!(
+        stderr(&offline).contains("--offline"),
+        "{}",
+        stderr(&offline)
+    );
+    assert!(!sandbox.target("mp-handoff").exists());
+
+    let online = sandbox.run(&["apply"]);
+
+    assert_eq!(code(&online), 0, "{}", stderr(&online));
+    let text = stdout(&online);
+    assert!(text.contains("hydrated 1 skill(s)"), "{text}");
+    assert!(text.contains("+ mp-handoff  "), "{text}");
+    assert!(sandbox.target("mp-handoff/SKILL.md").is_file());
+}
+
+#[test]
 fn update_then_hydrate_rebuilds_the_store_from_the_lock() {
     let sandbox = Sandbox::new();
     let upstream = git_origin(&[("handoff/SKILL.md", &skill_text("handoff", "body\n"))]);
