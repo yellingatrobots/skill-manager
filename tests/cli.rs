@@ -151,6 +151,44 @@ fn apply_deploys_a_local_source_into_both_targets() {
 }
 
 #[test]
+fn apply_reports_every_deployed_change_and_where_it_was_made() {
+    let sandbox = Sandbox::new();
+    sandbox.write_skill("codemode", "one\n");
+    sandbox.write_skill("old", "one\n");
+    sandbox.write_manifest("version = 1\n[sources.me]\npath = \"~/etc/ai/skills\"\n");
+
+    let first = sandbox.run(&["apply"]);
+
+    assert_eq!(code(&first), 0, "{}", stderr(&first));
+    let text = stdout(&first);
+    assert!(text.contains("+ me-codemode"), "{text}");
+    assert!(
+        text.contains(".local/share/skill-manager/deployed/current -> "),
+        "{text}"
+    );
+    assert!(text.contains(".claude/skills: linked "), "{text}");
+
+    sandbox.write_skill("codemode", "two\n");
+    fs::remove_dir_all(sandbox.path().join("etc/ai/skills/old")).unwrap();
+
+    let second = sandbox.run(&["apply"]);
+
+    assert_eq!(code(&second), 0, "{}", stderr(&second));
+    let text = stdout(&second);
+    assert!(text.contains("~ me-codemode"), "{text}");
+    assert!(text.contains("- me-old"), "{text}");
+    assert!(text.contains("= 1 skill(s) unchanged"), "{text}");
+    assert!(text.contains(".agents/skills: removed me-old"), "{text}");
+    assert!(text.contains("pruned "), "{text}");
+
+    let third = sandbox.run(&["apply"]);
+
+    let text = stdout(&third);
+    assert!(text.contains("unchanged"), "{text}");
+    assert!(text.contains(".claude/skills: no changes"), "{text}");
+}
+
+#[test]
 fn apply_skips_a_local_source_whose_path_is_absent_and_still_succeeds() {
     let sandbox = Sandbox::new();
     sandbox.write_skill("codemode", "principles\n");
@@ -231,7 +269,69 @@ fn update_then_hydrate_rebuilds_the_store_from_the_lock() {
 
     assert_eq!(code(&hydrated), 0, "{}", stderr(&hydrated));
     assert!(stdout(&hydrated).contains("mp-handoff"));
+    assert!(
+        stdout(&hydrated).contains(".local/share/skill-manager/store/sha256/"),
+        "{}",
+        stdout(&hydrated)
+    );
     assert!(store.exists());
+}
+
+#[test]
+fn update_reports_each_lock_change_and_where_it_was_written() {
+    let sandbox = Sandbox::new();
+    let upstream = git_origin(&[
+        ("handoff/SKILL.md", &skill_text("handoff", "one\n")),
+        ("retired/SKILL.md", &skill_text("retired", "one\n")),
+    ]);
+    sandbox.write_manifest(&format!(
+        "version = 1\n[sources.mp]\ngit = \"{}\"\n",
+        upstream.path().display()
+    ));
+
+    let first = sandbox.run(&["update"]);
+
+    assert_eq!(code(&first), 0, "{}", stderr(&first));
+    let text = stdout(&first);
+    assert!(text.contains(".config/skill-manager/skills.lock"), "{text}");
+    assert!(text.contains("+ mp-handoff"), "{text}");
+    assert!(text.contains("+ mp-retired"), "{text}");
+    assert!(text.contains("store: wrote 2 new entries"), "{text}");
+    assert!(
+        text.contains(".local/share/skill-manager/store/sha256/"),
+        "{text}"
+    );
+
+    fs::write(
+        upstream.path().join("handoff/SKILL.md"),
+        skill_text("handoff", "two\n"),
+    )
+    .unwrap();
+    fs::remove_dir_all(upstream.path().join("retired")).unwrap();
+    fs::create_dir_all(upstream.path().join("tdd")).unwrap();
+    fs::write(
+        upstream.path().join("tdd/SKILL.md"),
+        skill_text("tdd", "one\n"),
+    )
+    .unwrap();
+    git(upstream.path(), &["add", "-A"]);
+    git(upstream.path(), &["commit", "--quiet", "-m", "second"]);
+
+    let second = sandbox.run(&["update"]);
+
+    assert_eq!(code(&second), 0, "{}", stderr(&second));
+    let text = stdout(&second);
+    assert!(text.contains("~ mp-handoff"), "{text}");
+    assert!(text.contains("- mp-retired"), "{text}");
+    assert!(text.contains("+ mp-tdd"), "{text}");
+    assert!(text.contains(" -> "), "{text}");
+
+    let third = sandbox.run(&["update"]);
+
+    let text = stdout(&third);
+    assert!(text.contains("no changes"), "{text}");
+    assert!(!text.contains("~ mp-handoff"), "{text}");
+    assert!(text.contains("store: no new entries"), "{text}");
 }
 
 #[test]
@@ -318,15 +418,26 @@ fn add_and_remove_edit_the_manifest_in_place() {
         "version = 1\n# mine\n[sources.me]\npath = \"~/etc/ai/skills\"\nskills = [\"codemode\"]\n",
     );
 
+    assert_eq!(code(&sandbox.run(&["apply"])), 0);
     let added = sandbox.run(&["add", "me-tdd"]);
     assert_eq!(code(&added), 0, "{}", stderr(&added));
     let manifest = fs::read_to_string(sandbox.manifest()).unwrap();
     assert!(manifest.contains("# mine"));
     assert!(manifest.contains(r#"skills = ["codemode", "tdd"]"#));
     assert!(sandbox.target("me-tdd").exists());
+    let text = stdout(&added);
+    let wrote = format!("manifest: wrote {}", sandbox.manifest().display());
+    assert!(text.contains(&wrote), "{text}");
+    assert!(text.contains("+ me-tdd"), "{text}");
+    assert!(text.contains(".claude/skills: linked me-tdd"), "{text}");
 
     let removed = sandbox.run(&["remove", "me-tdd"]);
     assert_eq!(code(&removed), 0, "{}", stderr(&removed));
+    let text = stdout(&removed);
+    assert!(text.contains(&wrote), "{text}");
+    assert!(!text.contains("lock:"), "{text}");
+    assert!(text.contains("- me-tdd"), "{text}");
+    assert!(text.contains(".claude/skills: removed me-tdd"), "{text}");
     assert!(!sandbox.target("me-tdd").exists());
     assert!(sandbox.target("me-codemode").exists());
 }

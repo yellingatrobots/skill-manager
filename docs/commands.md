@@ -74,6 +74,24 @@ generation, target symlinks, and the absence of stale or foreign deployed
 entries. Historical store entries not referenced by the current lock are
 ignored.
 
+## Reporting changes
+
+Every mutating command reports on stdout each change it made and where:
+
+- the manifest file written, with any symlink chain followed to the real file
+  (`add`, `remove`);
+- the lock file written, and per source each skill entry added (`+`), changed
+  (`~`, naming the fields that moved, `before -> after`), or removed (`-`),
+  with a count of unchanged entries (`update`, `add`);
+- each new store entry and the skill it holds (`update`, `add`, `hydrate`);
+- for every apply: where `current` points, each deployed skill added, changed,
+  or removed against the previous generation, the links made and removed in
+  each target, and every generation pruned.
+
+Coordinates and digests are abbreviated to 12 characters after their scheme;
+paths are printed in full. `info` and `verify` write nothing and report no
+changes.
+
 ## Concurrency
 
 V1 adds no inter-process coordination. Callers are responsible for not running

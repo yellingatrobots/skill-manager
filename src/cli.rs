@@ -1,7 +1,10 @@
 //! Command-line surface. Printing lives here; the commands return data.
 
+use crate::change::Change;
 use crate::commands::{apply, edit, hydrate, info, update, verify};
 use crate::error::{Failures, Result};
+use crate::generate::namespaced;
+use crate::lock::{LockedSkill, SourceDiff};
 use crate::manifest;
 use crate::paths::Paths;
 use clap::{Parser, Subcommand};
@@ -90,6 +93,8 @@ pub fn run(cli: Cli) -> Result<i32> {
         } => {
             let report = update::run(&paths, source_id.as_deref(), no_apply)?;
             println!("updated {}", list(&report.updated));
+            print_lock_changes(&report.lock, &report.changes);
+            print_stored(&report.stored);
             if let Some(applied) = &report.applied {
                 print_apply(applied);
             }
@@ -99,7 +104,10 @@ pub fn run(cli: Cli) -> Result<i32> {
             let report = hydrate::run(&paths)?;
             match report.added.len() {
                 0 => println!("store already complete"),
-                count => println!("hydrated {count} skill(s): {}", list(&report.added)),
+                count => println!("hydrated {count} skill(s)"),
+            }
+            for (name, path) in &report.added {
+                println!("  + {name}  {}", path.display());
             }
             print_failures("failed", &report.failures);
             Ok(exit_code(&report.failures))
@@ -158,17 +166,129 @@ fn print_apply(report: &apply::ApplyReport) {
         report.generation
     );
     print_skipped(&report.skipped);
-    for target in &report.targets {
-        if !target.linked.is_empty() || !target.removed.is_empty() {
-            println!(
-                "  {}: +{} -{}",
-                target.path.display(),
-                target.linked.len(),
-                target.removed.len()
-            );
+    if report.switched {
+        println!(
+            "  current: {} -> {}",
+            report.current.display(),
+            report.generation_path.display()
+        );
+    } else {
+        println!(
+            "  current: {} already points at {}",
+            report.current.display(),
+            report.generation_path.display()
+        );
+    }
+    let mut unchanged = 0;
+    for (name, change) in &report.skills {
+        match change {
+            Change::Added(_) => println!("    + {name}"),
+            Change::Removed(_) => println!("    - {name}"),
+            Change::Changed(_, _) => println!("    ~ {name}"),
+            Change::Unchanged(_) => unchanged += 1,
         }
     }
+    if unchanged > 0 {
+        println!("    = {unchanged} skill(s) unchanged");
+    }
+    for target in &report.targets {
+        let mut parts = Vec::new();
+        if !target.linked.is_empty() {
+            parts.push(format!("linked {}", list(&target.linked)));
+        }
+        if !target.removed.is_empty() {
+            parts.push(format!("removed {}", list(&target.removed)));
+        }
+        if parts.is_empty() {
+            parts.push("no changes".to_string());
+        }
+        println!("  {}: {}", target.path.display(), parts.join("; "));
+    }
+    for path in &report.pruned {
+        println!("  pruned {}", path.display());
+    }
     print_failures("failed", &report.failures);
+}
+
+fn print_lock_changes(lock: &std::path::Path, changes: &[SourceDiff]) {
+    if changes.iter().any(SourceDiff::changed) {
+        println!("lock: wrote {}", lock.display());
+    } else {
+        println!("lock: no changes to {}", lock.display());
+    }
+    for source in changes {
+        println!("  source {}:", source.source_id);
+        let mut unchanged = 0;
+        for (name, change) in &source.skills {
+            let name = namespaced(&source.source_id, name);
+            match change {
+                Change::Added(skill) => println!(
+                    "    + {name}  {}  {}",
+                    short(&skill.coordinate),
+                    short(&skill.digest)
+                ),
+                Change::Removed(skill) => println!(
+                    "    - {name}  {}  {}",
+                    short(&skill.coordinate),
+                    short(&skill.digest)
+                ),
+                Change::Changed(was, now) => println!("    ~ {name}  {}", skill_delta(was, now)),
+                Change::Unchanged(_) => unchanged += 1,
+            }
+        }
+        if unchanged > 0 {
+            println!("    = {unchanged} skill(s) unchanged");
+        }
+    }
+}
+
+fn print_stored(stored: &[(String, std::path::PathBuf)]) {
+    match stored.len() {
+        0 => println!("store: no new entries"),
+        1 => println!("store: wrote 1 new entry"),
+        count => println!("store: wrote {count} new entries"),
+    }
+    for (name, path) in stored {
+        println!("  + {name}  {}", path.display());
+    }
+}
+
+/// Only the fields that moved, each as `before -> after`.
+fn skill_delta(was: &LockedSkill, now: &LockedSkill) -> String {
+    let mut parts = Vec::new();
+    let mut field = |label: &str, before: &str, after: &str, abbreviate: bool| {
+        if before != after {
+            let (before, after) = if abbreviate {
+                (short(before), short(after))
+            } else {
+                (before.to_string(), after.to_string())
+            };
+            parts.push(format!("{label} {before} -> {after}"));
+        }
+    };
+    field("coordinate", &was.coordinate, &now.coordinate, true);
+    field("digest", &was.digest, &now.digest, true);
+    field("path", &was.path, &now.path, false);
+    field(
+        "upstream name",
+        &was.upstream_name,
+        &now.upstream_name,
+        false,
+    );
+    if was.digest == now.digest {
+        parts.push("content unchanged".to_string());
+    }
+    parts.join("; ")
+}
+
+/// `sha256:<64 hex>` or `git:<40 hex>` cut to a readable prefix.
+fn short(value: &str) -> String {
+    match value.split_once(':') {
+        Some((scheme, rest)) if rest.chars().count() > 12 => {
+            format!("{scheme}:{}", rest.chars().take(12).collect::<String>())
+        }
+        _ => value.to_string(),
+    }
 }
 
 fn print_edit(verb: &str, report: &edit::EditReport) {
@@ -179,6 +299,15 @@ fn print_edit(verb: &str, report: &edit::EditReport) {
     }
     for note in &report.unchanged {
         println!("  {note}");
+    }
+    if let Some(manifest) = &report.manifest {
+        println!("manifest: wrote {}", manifest.display());
+    }
+    if let Some(lock) = &report.lock {
+        print_lock_changes(lock, &report.lock_changes);
+    }
+    if !report.stored.is_empty() {
+        print_stored(&report.stored);
     }
     if let Some(applied) = &report.applied {
         print_apply(applied);

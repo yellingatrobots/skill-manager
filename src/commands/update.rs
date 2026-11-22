@@ -4,16 +4,23 @@ use crate::commands::apply::{self, ApplyReport};
 use crate::error::{Error, Failures, Result};
 use crate::fetch;
 use crate::generate::namespaced;
-use crate::lock::{Lock, LockedSkill, LockedSource};
+use crate::lock::{self, Lock, LockedSkill, LockedSource, SourceDiff};
 use crate::manifest::{Manifest, Source};
 use crate::paths::Paths;
 use crate::skill::{self, Discovery};
 use crate::store::Store;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct UpdateReport {
     pub updated: Vec<String>,
+    /// The lock file that was rewritten.
+    pub lock: PathBuf,
+    /// Updated sources, plus any other source whose lock entries changed.
+    pub changes: Vec<SourceDiff>,
+    /// New store entries, by the namespaced skill they hold.
+    pub stored: Vec<(String, PathBuf)>,
     pub applied: Option<ApplyReport>,
     pub failures: Failures,
 }
@@ -38,8 +45,16 @@ pub fn run(paths: &Paths, source_id: Option<&str>, no_apply: bool) -> Result<Upd
         staged.insert(source.source_id.clone(), locked);
     }
 
-    let lock = merge(&manifest, previous, staged, source_id);
-    lock.write(&paths.lock)?;
+    let lock = merge(&manifest, previous.clone(), staged, source_id);
+    let written = lock.write(&paths.lock)?;
+    let updated: Vec<String> = selected
+        .iter()
+        .map(|source| source.source_id.clone())
+        .collect();
+    let changes = lock::diff(&previous, &lock)
+        .into_iter()
+        .filter(|source| source.changed() || updated.contains(&source.source_id))
+        .collect();
 
     let unlockable = unlockable_selections(&manifest, &lock);
     for missing in &unlockable {
@@ -60,13 +75,38 @@ pub fn run(paths: &Paths, source_id: Option<&str>, no_apply: bool) -> Result<Upd
     }
 
     Ok(UpdateReport {
-        updated: selected
-            .iter()
-            .map(|source| source.source_id.clone())
-            .collect(),
+        updated,
+        lock: written,
+        changes,
+        stored: stored_entries(&store, &lock),
         applied,
         failures,
     })
+}
+
+/// Names each entry `store` added after the skills in `lock` that hold it.
+pub(crate) fn stored_entries(store: &Store, lock: &Lock) -> Vec<(String, PathBuf)> {
+    let mut entries = Vec::new();
+    for digest in store.added() {
+        let path = store.path_for(&digest);
+        let holders: Vec<String> = lock
+            .sources
+            .iter()
+            .flat_map(|(source_id, source)| {
+                source
+                    .skills
+                    .iter()
+                    .filter(|(_, skill)| skill.digest == digest.to_string())
+                    .map(move |(name, _)| namespaced(source_id, name))
+            })
+            .collect();
+        if holders.is_empty() {
+            entries.push((digest.to_string(), path));
+        } else {
+            entries.extend(holders.into_iter().map(|name| (name, path.clone())));
+        }
+    }
+    entries
 }
 
 fn select_sources<'a>(manifest: &'a Manifest, source_id: Option<&str>) -> Result<Vec<&'a Source>> {
@@ -313,6 +353,26 @@ mod tests {
         assert!(entry.coordinate.starts_with("git:"));
         assert!(entry.digest.starts_with("sha256:"));
         assert!(home.paths.targets[0].join("mp-handoff/SKILL.md").is_file());
+    }
+
+    #[test]
+    fn reports_store_entries_only_when_they_are_new() {
+        let home = home();
+        let upstream = git_origin(&[("handoff/SKILL.md", &skill_text("handoff", "body\n"))]);
+        write_manifest(
+            &home,
+            &format!(
+                "version = 1\n[sources.mp]\ngit = \"{}\"\n",
+                upstream.path().display()
+            ),
+        );
+        let first = run(&home.paths, None, true).unwrap();
+        let digest = &Lock::read(&home.paths.lock).unwrap().sources["mp"].skills["handoff"].digest;
+        let expected =
+            Store::new(&home.paths.store).path_for(&crate::tree::Digest::parse(digest).unwrap());
+        assert_eq!(first.stored, [("mp-handoff".to_string(), expected)]);
+        let second = run(&home.paths, None, true).unwrap();
+        assert!(second.stored.is_empty(), "{:?}", second.stored);
     }
 
     #[test]

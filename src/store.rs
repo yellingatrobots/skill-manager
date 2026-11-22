@@ -3,17 +3,28 @@
 use crate::error::{Error, IoContext, Result};
 use crate::fsx;
 use crate::tree::{Digest, Tree};
+use std::cell::RefCell;
 use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct Store {
     root: PathBuf,
+    /// Entries this handle wrote, in order, for the commands to report.
+    added: RefCell<Vec<Digest>>,
 }
 
 impl Store {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Store { root: root.into() }
+        Store {
+            root: root.into(),
+            added: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// Digests this handle inserted that were not already present.
+    pub fn added(&self) -> Vec<Digest> {
+        self.added.borrow().clone()
     }
 
     pub fn path_for(&self, digest: &Digest) -> PathBuf {
@@ -40,7 +51,11 @@ impl Store {
 
         // Renaming a directory rewrites its `..`, so it must stay writable until it lands.
         match fs::rename(&staged, &destination) {
-            Ok(()) => fsx::make_read_only(&destination).map(|()| digest),
+            Ok(()) => {
+                fsx::make_read_only(&destination)?;
+                self.added.borrow_mut().push(digest.clone());
+                Ok(digest)
+            }
             // A concurrent writer won the race with identical content.
             Err(_) if destination.is_dir() => Ok(digest),
             Err(error) => Err(Error::io(&destination, error)),

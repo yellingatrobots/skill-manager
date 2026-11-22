@@ -9,11 +9,12 @@ use crate::paths::Paths;
 use crate::store::Store;
 use crate::tree::{Digest, Tree};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default)]
 pub struct HydrateReport {
-    pub added: Vec<String>,
+    /// Each skill written to the store, with the entry it landed in.
+    pub added: Vec<(String, PathBuf)>,
     pub failures: Failures,
 }
 
@@ -90,7 +91,7 @@ fn hydrate_git(
                 for (name, skill, digest) in entries {
                     let path = checkout.join(&skill.path);
                     match store_verified(&path, digest, store) {
-                        Ok(()) => report.added.push(namespaced(source_id, name)),
+                        Ok(entry) => report.added.push((namespaced(source_id, name), entry)),
                         Err(error) => report
                             .failures
                             .push(format!("{}: {error}", namespaced(source_id, name))),
@@ -118,7 +119,7 @@ fn hydrate_archives(
             Ok(fetched) => {
                 let path = fetched.root.join(name.as_str());
                 match store_verified(&path, digest, store) {
-                    Ok(()) => report.added.push(namespaced(source_id, name)),
+                    Ok(entry) => report.added.push((namespaced(source_id, name), entry)),
                     Err(error) => report
                         .failures
                         .push(format!("{}: {error}", namespaced(source_id, name))),
@@ -130,7 +131,7 @@ fn hydrate_archives(
 }
 
 /// Every fetched skill is verified against its locked content digest.
-fn store_verified(path: &Path, expected: &Digest, store: &Store) -> Result<()> {
+fn store_verified(path: &Path, expected: &Digest, store: &Store) -> Result<PathBuf> {
     if !path.is_dir() {
         return Err(Error::Lock(format!(
             "{} is not in the fetched content; run `skill-manager update`",
@@ -145,7 +146,7 @@ fn store_verified(path: &Path, expected: &Digest, store: &Store) -> Result<()> {
         )));
     }
     store.insert(&tree)?;
-    Ok(())
+    Ok(store.path_for(expected))
 }
 
 #[cfg(test)]
@@ -195,9 +196,13 @@ mod tests {
         let report = run(&home.paths).unwrap();
 
         assert!(report.failures.is_empty(), "{:?}", report.failures);
-        assert_eq!(report.added, ["mp-handoff", "mp-tdd"]);
         let lock = Lock::read(&home.paths.lock).unwrap();
         let store = Store::new(&home.paths.store);
+        let expected: Vec<(String, std::path::PathBuf)> = locked_digests(&lock)
+            .into_iter()
+            .map(|(name, digest)| (name, store.path_for(&digest)))
+            .collect();
+        assert_eq!(report.added, expected);
         for (_, digest) in locked_digests(&lock) {
             assert!(store.verify(&digest).unwrap());
         }
@@ -270,7 +275,8 @@ mod tests {
 
         let report = run(&home.paths).unwrap();
 
-        assert_eq!(report.added, ["mp-tdd"]);
+        let names: Vec<&str> = report.added.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["mp-tdd"]);
         assert!(
             report
                 .failures

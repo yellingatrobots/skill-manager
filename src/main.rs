@@ -1,4 +1,5 @@
 mod archive;
+mod change;
 mod cli;
 mod commands;
 mod deploy;

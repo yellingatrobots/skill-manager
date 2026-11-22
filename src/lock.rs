@@ -1,6 +1,7 @@
 //! The lock at `$XDG_CONFIG_HOME/skill-manager/skills.lock` — the record of
 //! resolution (ADR-0007).
 
+use crate::change::Change;
 use crate::error::{Error, IoContext, Result};
 use crate::fsx;
 use serde::Deserialize;
@@ -71,7 +72,8 @@ impl Lock {
         }
     }
 
-    pub fn write(&self, path: &Path) -> Result<()> {
+    /// Returns the file written, with any symlink chain followed.
+    pub fn write(&self, path: &Path) -> Result<std::path::PathBuf> {
         fsx::write_atomic(path, self.render().as_bytes())
     }
 
@@ -132,6 +134,55 @@ fn key(value: &str) -> String {
     } else {
         string(value)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceDiff {
+    pub source_id: String,
+    pub skills: BTreeMap<String, Change<LockedSkill>>,
+}
+
+impl SourceDiff {
+    pub fn changed(&self) -> bool {
+        self.skills.values().any(Change::is_change)
+    }
+}
+
+/// Every source and skill in either lock, ordered by source ID.
+pub fn diff(before: &Lock, after: &Lock) -> Vec<SourceDiff> {
+    let empty = BTreeMap::new();
+    let skills_of = |lock: &Lock, source_id: &str| {
+        lock.sources
+            .get(source_id)
+            .map(|source| &source.skills)
+            .unwrap_or(&empty)
+            .clone()
+    };
+    let source_ids: std::collections::BTreeSet<&String> =
+        before.sources.keys().chain(after.sources.keys()).collect();
+    source_ids
+        .into_iter()
+        .map(|source_id| {
+            let old = skills_of(before, source_id);
+            let mut new = skills_of(after, source_id);
+            let mut skills = BTreeMap::new();
+            for (name, was) in old {
+                let change = match new.remove(&name) {
+                    None => Change::Removed(was),
+                    Some(now) if now == was => Change::Unchanged(now),
+                    Some(now) => Change::Changed(was, now),
+                };
+                skills.insert(name, change);
+            }
+            for (name, now) in new {
+                skills.insert(name, Change::Added(now));
+            }
+            SourceDiff {
+                source_id: source_id.clone(),
+                skills,
+            }
+        })
+        .collect()
 }
 
 /// Reads a lock, or fails with the actionable message the commands share.
@@ -247,6 +298,61 @@ mod tests {
             Lock::read(&dir.path().join("skills.lock")).unwrap(),
             Lock::default()
         );
+    }
+
+    fn with(entries: &[(&str, &str, LockedSkill)]) -> Lock {
+        let mut lock = Lock::default();
+        for (source_id, name, skill) in entries {
+            lock.sources
+                .entry(source_id.to_string())
+                .or_insert_with(|| LockedSource {
+                    skills: BTreeMap::new(),
+                    ..sample().sources["mp"].clone()
+                })
+                .skills
+                .insert(name.to_string(), skill.clone());
+        }
+        lock
+    }
+
+    #[test]
+    fn diff_classifies_every_skill_in_either_lock() {
+        let before = with(&[
+            ("mp", "kept", skill("sha256:aa")),
+            ("mp", "moved", skill("sha256:aa")),
+            ("mp", "gone", skill("sha256:aa")),
+            ("old", "x", skill("sha256:aa")),
+        ]);
+        let after = with(&[
+            ("mp", "kept", skill("sha256:aa")),
+            ("mp", "moved", skill("sha256:bb")),
+            ("mp", "new", skill("sha256:cc")),
+            ("fresh", "y", skill("sha256:dd")),
+        ]);
+        let diff = diff(&before, &after);
+        let ids: Vec<&str> = diff.iter().map(|s| s.source_id.as_str()).collect();
+        assert_eq!(ids, ["fresh", "mp", "old"]);
+        let mp = &diff[1].skills;
+        assert_eq!(mp["kept"], Change::Unchanged(skill("sha256:aa")));
+        assert_eq!(
+            mp["moved"],
+            Change::Changed(skill("sha256:aa"), skill("sha256:bb"))
+        );
+        assert_eq!(mp["gone"], Change::Removed(skill("sha256:aa")));
+        assert_eq!(mp["new"], Change::Added(skill("sha256:cc")));
+        assert_eq!(diff[0].skills["y"], Change::Added(skill("sha256:dd")));
+        assert_eq!(diff[2].skills["x"], Change::Removed(skill("sha256:aa")));
+    }
+
+    #[test]
+    fn diff_of_a_lock_with_itself_changes_nothing() {
+        let lock = with(&[
+            ("mp", "a", skill("sha256:aa")),
+            ("kp", "b", skill("sha256:bb")),
+        ]);
+        let diff = diff(&lock, &lock);
+        assert!(diff.iter().all(|source| !source.changed()));
+        assert_eq!(diff.len(), 2);
     }
 
     #[test]

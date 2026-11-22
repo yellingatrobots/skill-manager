@@ -5,19 +5,28 @@ use crate::commands::update;
 use crate::error::{Error, Failures, Result};
 use crate::fsx;
 use crate::generate::{namespaced, split_namespaced};
-use crate::lock::Lock;
+use crate::lock::{self, Lock, SourceDiff};
 use crate::manifest::{Manifest, Source};
 use crate::manifest_edit::{self, Edit};
 use crate::paths::Paths;
 use crate::skill;
 use crate::store::Store;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct EditReport {
     pub changed: Vec<String>,
     /// Selections that were already in the requested state.
     pub unchanged: Vec<String>,
+    /// The manifest file written, when any selection changed.
+    pub manifest: Option<PathBuf>,
+    /// The lock file written; only `add` writes it.
+    pub lock: Option<PathBuf>,
+    /// How the written lock differs, for the sources `add` resolved.
+    pub lock_changes: Vec<SourceDiff>,
+    /// Store entries the preflight fetch added, by namespaced skill.
+    pub stored: Vec<(String, PathBuf)>,
     pub applied: Option<ApplyReport>,
     pub failures: Failures,
 }
@@ -97,18 +106,27 @@ pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
         }
     }
 
+    let stored = update::stored_entries(&store, &staged);
     if changed.is_empty() {
         return Ok(EditReport {
             changed,
             unchanged,
+            manifest: None,
+            lock: None,
+            lock_changes: Vec::new(),
+            stored,
             applied: None,
             failures,
         });
     }
 
     let manifest = Manifest::parse(&edited)?;
-    fsx::write_atomic(&paths.manifest, edited.as_bytes())?;
-    staged.write(&paths.lock)?;
+    let manifest_written = fsx::write_atomic(&paths.manifest, edited.as_bytes())?;
+    let lock_written = staged.write(&paths.lock)?;
+    let lock_changes = lock::diff(&lock, &staged)
+        .into_iter()
+        .filter(|source| source.changed() || wanted.contains_key(&source.source_id))
+        .collect();
     let applied = apply::run_with(paths, &manifest, &staged)?;
     for failure in applied.failures.iter() {
         failures.push(failure);
@@ -117,6 +135,10 @@ pub fn add(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     Ok(EditReport {
         changed,
         unchanged,
+        manifest: Some(manifest_written),
+        lock: Some(lock_written),
+        lock_changes,
+        stored,
         applied: Some(applied),
         failures,
     })
@@ -154,13 +176,17 @@ pub fn remove(paths: &Paths, requested: &[String]) -> Result<EditReport> {
         return Ok(EditReport {
             changed,
             unchanged,
+            manifest: None,
+            lock: None,
+            lock_changes: Vec::new(),
+            stored: Vec::new(),
             applied: None,
             failures: Failures::new(),
         });
     }
 
     let manifest = Manifest::parse(&edited)?;
-    fsx::write_atomic(&paths.manifest, edited.as_bytes())?;
+    let manifest_written = fsx::write_atomic(&paths.manifest, edited.as_bytes())?;
     let lock = Lock::read(&paths.lock)?;
     let applied = apply::run_with(paths, &manifest, &lock)?;
     let mut failures = Failures::new();
@@ -171,6 +197,10 @@ pub fn remove(paths: &Paths, requested: &[String]) -> Result<EditReport> {
     Ok(EditReport {
         changed,
         unchanged,
+        manifest: Some(manifest_written),
+        lock: None,
+        lock_changes: Vec::new(),
+        stored: Vec::new(),
         applied: Some(applied),
         failures,
     })
@@ -298,8 +328,9 @@ mod tests {
         fs::rename(&home.paths.manifest, &repo).unwrap();
         std::os::unix::fs::symlink(&repo, &home.paths.manifest).unwrap();
 
-        add(&home.paths, &["me-tdd".to_string()]).unwrap();
+        let report = add(&home.paths, &["me-tdd".to_string()]).unwrap();
 
+        assert_eq!(report.manifest, Some(repo.clone()));
         assert!(
             fs::symlink_metadata(&home.paths.manifest)
                 .unwrap()
@@ -376,6 +407,23 @@ mod tests {
         let report = add(&home.paths, &["mp-tdd".to_string()]).unwrap();
 
         assert_eq!(report.changed, ["mp-tdd"]);
+        assert_eq!(
+            report.manifest.as_deref(),
+            Some(home.paths.manifest.as_path())
+        );
+        assert_eq!(report.lock.as_deref(), Some(home.paths.lock.as_path()));
+        let mp = &report.lock_changes[0];
+        assert!(matches!(mp.skills["tdd"], crate::change::Change::Added(_)));
+        assert!(matches!(
+            mp.skills["handoff"],
+            crate::change::Change::Unchanged(_)
+        ));
+        let stored: Vec<&str> = report
+            .stored
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        assert_eq!(stored, ["mp-tdd"]);
         let lock = Lock::read(&home.paths.lock).unwrap();
         assert!(lock.skill("mp", "handoff").is_some());
         assert!(lock.skill("mp", "tdd").is_some());
@@ -401,6 +449,11 @@ mod tests {
         let report = remove(&home.paths, &["me-tdd".to_string()]).unwrap();
 
         assert_eq!(report.changed, ["me-tdd"]);
+        assert_eq!(
+            report.manifest.as_deref(),
+            Some(home.paths.manifest.as_path())
+        );
+        assert_eq!(report.lock, None);
         assert!(
             fs::read_to_string(&home.paths.manifest)
                 .unwrap()

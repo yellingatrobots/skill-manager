@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 const MAX_SYMLINK_HOPS: usize = 40;
 
 /// Writes `contents` to a temporary sibling, then renames it over `path`.
-pub fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
+/// Returns the file written: `path` with any symlink chain followed.
+pub fn write_atomic(path: &Path, contents: &[u8]) -> Result<PathBuf> {
     let path = &resolve_symlinks(path)?;
     let parent = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(parent).at(parent)?;
@@ -18,7 +19,7 @@ pub fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
     temporary
         .persist(path)
         .map_err(|error| crate::error::Error::io(path, error.error))?;
-    Ok(())
+    Ok(path.clone())
 }
 
 /// Follows a symlink chain to the path that holds the content.
@@ -124,7 +125,7 @@ mod tests {
         std::os::unix::fs::symlink(&target, &hop).unwrap();
         std::os::unix::fs::symlink("hop", &link).unwrap();
 
-        write_atomic(&link, b"second").unwrap();
+        assert_eq!(write_atomic(&link, b"second").unwrap(), target);
 
         assert!(
             fs::symlink_metadata(&link)

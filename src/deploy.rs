@@ -1,11 +1,12 @@
 //! One generated tree, symlinked into every target (ADR-0009).
 
+use crate::change::Change;
 use crate::error::{Error, IoContext, Result};
 use crate::fsx;
 use crate::generate::{self, Deployable};
 use crate::paths::Paths;
 use crate::tree::{Digest, Tree};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -23,7 +24,11 @@ pub struct Applied {
     pub generation: Digest,
     /// False when `current` already pointed at this generation.
     pub switched: bool,
+    /// Each deployed name in either generation, compared by content digest.
+    pub skills: BTreeMap<String, Change<Digest>>,
     pub targets: Vec<TargetReport>,
+    /// Old generation directories deleted after the switch.
+    pub pruned: Vec<PathBuf>,
 }
 
 pub struct Deployment<'a> {
@@ -36,7 +41,9 @@ impl<'a> Deployment<'a> {
     }
 
     pub fn apply(&self, deployables: &[Deployable]) -> Result<Applied> {
+        let previous = fs::read_link(&self.paths.current).ok();
         let generation = self.materialize_generation(deployables)?;
+        let skills = compare_generations(previous.as_deref(), &self.paths.generation(&generation))?;
         let switched = self.switch_current(&generation)?;
         let names: BTreeSet<String> = deployables
             .iter()
@@ -48,12 +55,14 @@ impl<'a> Deployment<'a> {
         for target in &self.paths.targets {
             targets.push(self.sync_target(target, &names)?);
         }
-        self.prune_generations(&generation)?;
+        let pruned = self.prune_generations(&generation)?;
 
         Ok(Applied {
             generation,
             switched,
+            skills,
             targets,
+            pruned,
         })
     }
 
@@ -133,11 +142,12 @@ impl<'a> Deployment<'a> {
         fs::read_link(path).is_ok_and(|target| target.starts_with(&self.paths.deployed))
     }
 
-    fn prune_generations(&self, keep: &Digest) -> Result<()> {
+    fn prune_generations(&self, keep: &Digest) -> Result<Vec<PathBuf>> {
         let kept = self.paths.generation(keep);
+        let mut pruned = Vec::new();
         let algorithms = match fs::read_dir(&self.paths.generations) {
             Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(pruned),
             Err(error) => return Err(Error::io(&self.paths.generations, error)),
         };
         for algorithm in algorithms {
@@ -149,11 +159,47 @@ impl<'a> Deployment<'a> {
                 let generation = generation.at(&algorithm)?.path();
                 if generation != kept {
                     fsx::remove_tree(&generation)?;
+                    pruned.push(generation);
                 }
             }
         }
-        Ok(())
+        Ok(pruned)
     }
+}
+
+/// A missing previous generation (first deploy, or pruned by hand) compares as empty.
+fn compare_generations(
+    previous: Option<&Path>,
+    next: &Path,
+) -> Result<BTreeMap<String, Change<Digest>>> {
+    let mut before = match previous {
+        Some(path) if path.is_dir() => skill_digests(path)?,
+        _ => BTreeMap::new(),
+    };
+    let mut skills = BTreeMap::new();
+    for (name, now) in skill_digests(next)? {
+        let change = match before.remove(&name) {
+            None => Change::Added(now),
+            Some(was) if was == now => Change::Unchanged(now),
+            Some(was) => Change::Changed(was, now),
+        };
+        skills.insert(name, change);
+    }
+    for (name, was) in before {
+        skills.insert(name, Change::Removed(was));
+    }
+    Ok(skills)
+}
+
+fn skill_digests(generation: &Path) -> Result<BTreeMap<String, Digest>> {
+    let mut digests = BTreeMap::new();
+    for entry in fs::read_dir(generation).at(generation)? {
+        let path = entry.at(generation)?.path();
+        if path.is_dir() {
+            digests.insert(file_name(&path), Tree::read(&path)?.digest()?);
+        }
+    }
+    Ok(digests)
 }
 
 fn expected_names(mut names: BTreeSet<String>) -> BTreeSet<String> {
@@ -173,6 +219,7 @@ pub fn file_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::change::Change;
     use crate::frontmatter::SkillDoc;
     use tempfile::TempDir;
 
@@ -260,6 +307,41 @@ mod tests {
                 .last(),
             Some("two")
         );
+    }
+
+    #[test]
+    fn reports_how_each_deployed_skill_differs_from_the_previous_generation() {
+        let (_home, paths) = home();
+        let (_a, kept) = deployable("mp", "kept", "body\n");
+        let (_b, edited) = deployable("mp", "edited", "one\n");
+        let (_c, edited_again) = deployable("mp", "edited", "two\n");
+        let (_d, gone) = deployable("mp", "gone", "body\n");
+        let (_e, fresh) = deployable("mp", "fresh", "body\n");
+
+        let first = Deployment::new(&paths)
+            .apply(&[kept.clone(), edited, gone])
+            .unwrap();
+        assert!(
+            first
+                .skills
+                .values()
+                .all(|change| matches!(change, Change::Added(_)))
+        );
+        let old = paths.generation(&first.generation);
+
+        let second = Deployment::new(&paths)
+            .apply(&[kept, edited_again, fresh])
+            .unwrap();
+
+        assert_eq!(second.pruned, [old]);
+        assert!(matches!(second.skills["mp-kept"], Change::Unchanged(_)));
+        assert!(matches!(second.skills["mp-edited"], Change::Changed(_, _)));
+        assert!(matches!(second.skills["mp-gone"], Change::Removed(_)));
+        assert!(matches!(second.skills["mp-fresh"], Change::Added(_)));
+        assert!(matches!(
+            second.skills["sm-provenance"],
+            Change::Unchanged(_)
+        ));
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! `apply` — offline materialization of the deployed tree (ADR-0004).
 
+use crate::change::Change;
 use crate::commands::plan;
 use crate::deploy::{Deployment, TargetReport};
 use crate::error::{Failures, Result};
@@ -8,11 +9,21 @@ use crate::manifest::Manifest;
 use crate::paths::Paths;
 use crate::store::Store;
 use crate::tree::Digest;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct ApplyReport {
     pub generation: Digest,
+    /// Where the generation lives on disk.
+    pub generation_path: PathBuf,
+    /// The `current` symlink, repointed when `switched`.
+    pub current: PathBuf,
     pub switched: bool,
+    /// Each deployed name in either generation, compared by content digest.
+    pub skills: BTreeMap<String, Change<Digest>>,
+    /// Old generation directories deleted.
+    pub pruned: Vec<PathBuf>,
     pub deployed: Vec<String>,
     pub targets: Vec<TargetReport>,
     pub failures: Failures,
@@ -42,8 +53,12 @@ pub fn run_with(paths: &Paths, manifest: &Manifest, lock: &Lock) -> Result<Apply
     }
 
     Ok(ApplyReport {
+        generation_path: paths.generation(&applied.generation),
         generation: applied.generation,
+        current: paths.current.clone(),
         switched: applied.switched,
+        skills: applied.skills,
+        pruned: applied.pruned,
         deployed: plan.deployables.iter().map(|d| d.deployed_name()).collect(),
         targets: applied.targets,
         failures: plan.failures,
