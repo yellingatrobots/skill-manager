@@ -384,6 +384,34 @@ fn update_reports_each_lock_change_and_where_it_was_written() {
 }
 
 #[test]
+fn update_deploys_a_skill_whose_metadata_is_an_inline_nested_map() {
+    let sandbox = Sandbox::new();
+    let upstream = git_origin(&[(
+        "agents/SKILL.md",
+        "---\nname: agents\ndescription: builds agents\nmetadata: {\"openclaw\": {\"requires\": {\"env\": [\"ELEVENLABS_API_KEY\"]}, \"primaryEnv\": \"ELEVENLABS_API_KEY\"}}\n---\nbody\n",
+    )]);
+    sandbox.write_manifest(&format!(
+        "version = 1\n[sources.el]\ngit = \"{}\"\nskills = [\"agents\"]\n",
+        upstream.path().display()
+    ));
+
+    let output = sandbox.run(&["update"]);
+
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    let deployed = fs::read_to_string(sandbox.target("el-agents").join("SKILL.md")).unwrap();
+    assert!(
+        deployed.contains("\n  openclaw: {\"requires\": {\"env\": [\"ELEVENLABS_API_KEY\"]}, \"primaryEnv\": \"ELEVENLABS_API_KEY\"}\n"),
+        "{deployed}"
+    );
+    assert!(deployed.contains("\n  sm-source-id: el\n"), "{deployed}");
+    let json = sandbox.run(&["info", "el-agents", "--json"]);
+    let value: serde_json::Value = serde_json::from_str(&stdout(&json)).unwrap();
+    assert_eq!(value["skills"][0]["upstream_name"], "agents");
+    let verified = sandbox.run(&["verify"]);
+    assert_eq!(code(&verified), 0, "{}", stderr(&verified));
+}
+
+#[test]
 fn info_lists_skills_tersely_and_reports_everything_on_request() {
     let sandbox = Sandbox::new();
     sandbox.write_skill("codemode", "body\n");

@@ -65,6 +65,7 @@ must be a directory containing `SKILL.md` with frontmatter `name` and
 `^[a-z0-9]+(-[a-z0-9]+)*$` — the deployed `<source-id>-<skill>` has to satisfy it
 too. Invalid individual skills are reported and skipped; valid skills continue
 and the command exits non-zero. The same applies to a skill whose `metadata:`
-block is not a plain key-value map, already defines one of the `sm-` keys this
-tool injects, or whose deployed `<source-id>-<skill>` would exceed the spec's
-64-character limit (ADR-0013).
+value is not a map, already defines one of the `sm-` keys this tool injects, or
+whose deployed `<source-id>-<skill>` would exceed the spec's 64-character limit
+(ADR-0013). A `metadata:` map may be written inline (`{...}`) and may hold
+nested values; those are kept as written (ADR-0015).

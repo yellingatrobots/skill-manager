@@ -24,8 +24,16 @@ pub enum FrontmatterError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Scalar(String),
-    Map(Vec<(String, String)>),
+    Map(Vec<(String, Item)>),
     Opaque,
+}
+
+/// A value inside a map. `Raw` is a value kept but not interpreted: the text
+/// after its `key:` plus any more-indented lines, with the map's indent removed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Item {
+    Scalar(String),
+    Raw { inline: String, lines: Vec<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,9 +67,17 @@ impl Frontmatter {
     /// Reads `key` from the map at `section`.
     pub fn get_in(&self, section: &str, key: &str) -> Option<&str> {
         match self.value(section)? {
-            Value::Map(map) => map.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str()),
+            Value::Map(map) => match map.iter().find(|(k, _)| k == key)? {
+                (_, Item::Scalar(scalar)) => Some(scalar.as_str()),
+                (_, Item::Raw { .. }) => None,
+            },
             _ => None,
         }
+    }
+
+    /// Whether the map at `section` defines `key`, whatever its value's shape.
+    pub fn has_in(&self, section: &str, key: &str) -> bool {
+        matches!(self.value(section), Some(Value::Map(map)) if map.iter().any(|(k, _)| k == key))
     }
 
     /// Whether `section` can take injected keys: absent, or a plain map.
@@ -84,8 +100,8 @@ impl Frontmatter {
             _ => Vec::new(),
         };
         match map.iter_mut().find(|(k, _)| k == key) {
-            Some(entry) => entry.1 = value.into(),
-            None => map.push((key.to_string(), value.into())),
+            Some(entry) => entry.1 = Item::Scalar(value.into()),
+            None => map.push((key.to_string(), Item::Scalar(value.into()))),
         }
         self.put(section, Value::Map(map));
     }
@@ -150,8 +166,23 @@ fn render_entry(key: &str, value: &Value) -> String {
         Value::Scalar(scalar) => format!("{key}: {}\n", quote(scalar)),
         Value::Map(map) => {
             let mut out = format!("{key}:\n");
-            for (nested, scalar) in map {
-                out.push_str(&format!("  {nested}: {}\n", quote(scalar)));
+            for (nested, item) in map {
+                match item {
+                    Item::Scalar(scalar) => {
+                        out.push_str(&format!("  {nested}: {}\n", quote(scalar)));
+                    }
+                    Item::Raw { inline, lines } => {
+                        out.push_str(&format!("  {nested}:"));
+                        if !inline.is_empty() {
+                            out.push(' ');
+                            out.push_str(inline);
+                        }
+                        out.push('\n');
+                        for line in lines {
+                            out.push_str(&format!("  {line}\n"));
+                        }
+                    }
+                }
             }
             out
         }
@@ -246,6 +277,11 @@ fn parse_block(block: &str) -> Result<Frontmatter, FrontmatterError> {
             let (text, consumed) = read_block_scalar(&lines[index..], style);
             index += consumed;
             Value::Scalar(text)
+        } else if rest.starts_with('{') {
+            // Unquoting leaves text that starts with `{` untouched.
+            let (text, consumed) = read_plain_or_quoted(rest, &lines[index..]);
+            index += consumed;
+            parse_flow_map(&text).map_or(Value::Opaque, Value::Map)
         } else {
             let (text, consumed) = read_plain_or_quoted(rest, &lines[index..]);
             index += consumed;
@@ -331,11 +367,12 @@ fn starts_indented_block(lines: &[&str]) -> bool {
 }
 
 /// Reads the indented block under a bare `key:`. A run of `key: value` lines
-/// at one indent is a map; anything else — deeper nesting, sequences — is
-/// opaque and survives only as its original lines.
+/// at one indent is a map; a value it does not model — nested lines, a flow
+/// collection, a block scalar — is kept raw. Anything else, such as a
+/// sequence, is opaque and survives only as its original lines.
 fn read_indented_block(lines: &[&str]) -> (Value, usize) {
     let indent = indent_of(lines[0]);
-    let mut entries = Vec::new();
+    let mut entries: Vec<(String, String, Vec<String>)> = Vec::new();
     let mut modelled = true;
     let mut consumed = 0;
 
@@ -344,30 +381,124 @@ fn read_indented_block(lines: &[&str]) -> (Value, usize) {
             break;
         }
         consumed += 1;
-        match simple_mapping(line) {
-            Some(entry) if indent_of(line) == indent => entries.push(entry),
-            _ => modelled = false,
+        if indent_of(line) > indent {
+            match entries.last_mut() {
+                Some((_, _, nested)) => nested.push(line[indent..].to_string()),
+                None => modelled = false,
+            }
+            continue;
+        }
+        match block_entry(line) {
+            Some((key, rest)) => entries.push((key, rest, Vec::new())),
+            None => modelled = false,
         }
     }
 
-    let value = if modelled {
-        Value::Map(entries)
-    } else {
-        Value::Opaque
-    };
-    (value, consumed)
+    if !modelled {
+        return (Value::Opaque, consumed);
+    }
+    let map = entries
+        .into_iter()
+        .map(|(key, rest, nested)| {
+            let item = if nested.is_empty() && is_plain_or_quoted(&rest) {
+                Item::Scalar(unquote(&rest))
+            } else {
+                Item::Raw {
+                    inline: rest,
+                    lines: nested,
+                }
+            };
+            (key, item)
+        })
+        .collect();
+    (Value::Map(map), consumed)
 }
 
-fn indent_of(line: &str) -> usize {
-    line.len() - line.trim_start().len()
-}
-
-fn simple_mapping(line: &str) -> Option<(String, String)> {
+/// A `key: rest` line inside a block map, with `rest` verbatim.
+fn block_entry(line: &str) -> Option<(String, String)> {
     let (key, rest) = line.trim().split_once(':')?;
     if key.is_empty() || key.contains(' ') {
         return None;
     }
-    Some((key.to_string(), unquote(rest.trim())))
+    Some((key.to_string(), rest.trim().to_string()))
+}
+
+/// Whether `value` is a scalar this parser reads, rather than a flow
+/// collection, block scalar, anchor, alias, tag, or null.
+fn is_plain_or_quoted(value: &str) -> bool {
+    !value.is_empty() && !value.starts_with(['{', '[', '|', '>', '&', '*', '!'])
+}
+
+/// Reads a one-level flow map, `{k: v, ...}`. A value that is itself a
+/// collection is kept raw. `None` for anything that is not a well-formed map.
+fn parse_flow_map(text: &str) -> Option<Vec<(String, Item)>> {
+    let inner = text.trim().strip_prefix('{')?.strip_suffix('}')?;
+    let parts = split_flow(inner, ',')?;
+    let mut map = Vec::new();
+    for (position, part) in parts.iter().enumerate() {
+        let part = part.trim();
+        if part.is_empty() {
+            // `{}` and a trailing comma are the only empty parts allowed.
+            if position + 1 == parts.len() {
+                continue;
+            }
+            return None;
+        }
+        let mut halves = split_flow(part, ':')?.into_iter();
+        let key = unquote(halves.next()?.trim());
+        let value: Vec<&str> = halves.collect();
+        if key.is_empty() || value.is_empty() {
+            return None;
+        }
+        let value = value.join(":").trim().to_string();
+        let item = if is_plain_or_quoted(&value) {
+            Item::Scalar(unquote(&value))
+        } else {
+            Item::Raw {
+                inline: value,
+                lines: Vec::new(),
+            }
+        };
+        map.push((key, item));
+    }
+    Some(map)
+}
+
+/// Splits `text` at each `separator` outside quotes and brackets. `None` when
+/// the brackets or quotes do not balance.
+fn split_flow(text: &str, separator: char) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut start = 0;
+    for (at, c) in text.char_indices() {
+        match quote {
+            Some('"') if escaped => escaped = false,
+            Some('"') if c == '\\' => escaped = true,
+            Some(open) if c == open => quote = None,
+            Some(_) => {}
+            None => match c {
+                '"' | '\'' => quote = Some(c),
+                '{' | '[' => depth += 1,
+                '}' | ']' => depth = depth.checked_sub(1)?,
+                c if c == separator && depth == 0 => {
+                    parts.push(&text[start..at]);
+                    start = at + c.len_utf8();
+                }
+                _ => {}
+            },
+        }
+    }
+    if depth != 0 || quote.is_some() {
+        return None;
+    }
+    parts.push(&text[start..]);
+    Some(parts)
+}
+
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start().len()
 }
 
 /// Reads a plain or quoted scalar, absorbing more-indented continuation lines.
@@ -600,13 +731,81 @@ mod tests {
     }
 
     #[test]
-    fn a_nested_or_sequence_block_is_opaque_and_survives_verbatim() {
-        let nested =
-            "---\nname: x\ndescription: d\nmetadata:\n  nested:\n    deeper: value\n---\nbody\n";
-        let doc = parse(nested);
-        assert!(!doc.frontmatter.is_extensible_map("metadata"));
+    fn a_nested_metadata_map_is_extensible_and_keeps_its_nesting() {
+        let nested = "---\nname: x\ndescription: d\nmetadata:\n    nested:\n      deeper: value\n    tools: [a, b]\n    author: matt\n---\nbody\n";
+        let mut doc = parse(nested);
+        assert!(doc.frontmatter.is_extensible_map("metadata"));
         assert_eq!(doc.render(), nested);
+        assert_eq!(doc.frontmatter.get_in("metadata", "author"), Some("matt"));
+        assert_eq!(doc.frontmatter.get_in("metadata", "nested"), None);
+        assert!(doc.frontmatter.has_in("metadata", "nested"));
 
+        doc.frontmatter.set_in("metadata", "sm-source-id", "mp");
+
+        assert_eq!(
+            doc.render(),
+            "---\nname: x\ndescription: d\nmetadata:\n  nested:\n    deeper: value\n  tools: [a, b]\n  author: matt\n  sm-source-id: mp\n---\nbody\n"
+        );
+        let reparsed = parse(&doc.render());
+        assert_eq!(
+            reparsed.frontmatter.get_in("metadata", "sm-source-id"),
+            Some("mp")
+        );
+    }
+
+    #[test]
+    fn an_inline_metadata_map_is_extensible_and_keeps_its_values() {
+        let inline = "---\nname: x\ndescription: d\nmetadata: {\"openclaw\": {\"requires\": {\"env\": [\"KEY\"]}, \"primaryEnv\": \"KEY\"}, \"author\": 'matt, jr', 'sm-tags': rust}\n---\nbody\n";
+        let mut doc = parse(inline);
+        assert!(doc.frontmatter.is_extensible_map("metadata"));
+        assert_eq!(doc.render(), inline);
+        assert_eq!(
+            doc.frontmatter.get_in("metadata", "author"),
+            Some("matt, jr")
+        );
+        assert_eq!(doc.frontmatter.get_in("metadata", "sm-tags"), Some("rust"));
+        assert!(doc.frontmatter.has_in("metadata", "openclaw"));
+
+        doc.frontmatter.set_in("metadata", "sm-source-id", "el");
+
+        assert_eq!(
+            doc.render(),
+            "---\nname: x\ndescription: d\nmetadata:\n  openclaw: {\"requires\": {\"env\": [\"KEY\"]}, \"primaryEnv\": \"KEY\"}\n  author: matt, jr\n  sm-tags: rust\n  sm-source-id: el\n---\nbody\n"
+        );
+        let reparsed = parse(&doc.render());
+        assert_eq!(
+            reparsed.frontmatter.get_in("metadata", "sm-source-id"),
+            Some("el")
+        );
+        assert_eq!(
+            reparsed.frontmatter.get_in("metadata", "author"),
+            Some("matt, jr")
+        );
+    }
+
+    #[test]
+    fn an_empty_inline_metadata_map_is_extensible() {
+        let doc = parse("---\nname: x\ndescription: d\nmetadata: {}\n---\nbody\n");
+        assert!(doc.frontmatter.is_extensible_map("metadata"));
+    }
+
+    #[test]
+    fn a_metadata_value_that_is_not_a_map_is_not_extensible() {
+        for metadata in [
+            "metadata: [a, b]",
+            "metadata: {\"a\": 1",
+            "metadata:\n  - a",
+            "metadata: text",
+        ] {
+            let doc = parse(&format!(
+                "---\nname: x\ndescription: d\n{metadata}\n---\nbody\n"
+            ));
+            assert!(!doc.frontmatter.is_extensible_map("metadata"), "{metadata}");
+        }
+    }
+
+    #[test]
+    fn a_sequence_block_is_opaque_and_survives_verbatim() {
         let sequence =
             "---\nname: x\ndescription: d\nallowed-tools:\n  - Read\n  - Bash\n---\nbody\n";
         let doc = parse(sequence);

@@ -232,7 +232,11 @@ fn confirm_available(
             }
             let name = namespaced(&source.source_id, skill);
             return Err(Error::Configuration(
-                match discovery.invalid.iter().find(|invalid| &invalid.name == skill) {
+                match discovery
+                    .invalid
+                    .iter()
+                    .find(|invalid| &invalid.name == skill)
+                {
                     Some(invalid) => format!("`{name}`: {}", invalid.reason),
                     None => format!("`{name}` was not found in {}", root.display()),
                 },

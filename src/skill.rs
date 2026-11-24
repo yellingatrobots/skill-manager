@@ -31,17 +31,17 @@ pub struct Skill {
     pub tree: Tree,
 }
 
-/// Provenance is injected into `metadata`, so that key must be a plain map we
-/// can extend, and it must not already claim one of our keys (ADR-0013).
+/// Provenance is injected into `metadata`, so that key must be a map we can
+/// extend, and it must not already claim one of our keys (ADR-0013, ADR-0015).
 fn check_injectable(doc: &SkillDoc) -> std::result::Result<(), String> {
     let metadata = crate::generate::METADATA;
     if !doc.frontmatter.is_extensible_map(metadata) {
         return Err(format!(
-            "frontmatter `{metadata}` is not a plain key-value map, so provenance cannot be added"
+            "frontmatter `{metadata}` is not a map, so provenance cannot be added"
         ));
     }
     for key in crate::generate::INJECTED_KEYS {
-        if doc.frontmatter.get_in(metadata, key).is_some() {
+        if doc.frontmatter.has_in(metadata, key) {
             return Err(format!(
                 "frontmatter `{metadata}` already defines `{key}`, which skill-manager injects"
             ));
@@ -282,13 +282,28 @@ mod tests {
         write(
             dir.path(),
             "nested/SKILL.md",
-            "---\nname: nested\ndescription: d\nmetadata:\n  a:\n    b: c\n---\nbody\n",
+            "---\nname: nested\ndescription: d\nmetadata:\n  - a\n---\nbody\n",
         );
 
         let found = discover(dir.path(), None).unwrap();
 
         assert!(found.skills.is_empty());
-        assert!(found.invalid[0].reason.contains("plain key-value map"));
+        assert!(found.invalid[0].reason.contains("not a map"));
+    }
+
+    #[test]
+    fn rejects_an_inline_metadata_map_that_already_claims_an_injected_key() {
+        let dir = TempDir::new().unwrap();
+        write(
+            dir.path(),
+            "claimed/SKILL.md",
+            "---\nname: claimed\ndescription: d\nmetadata: {\"sm-digest\": {\"x\": 1}}\n---\nbody\n",
+        );
+
+        let found = discover(dir.path(), None).unwrap();
+
+        assert!(found.skills.is_empty());
+        assert!(found.invalid[0].reason.contains("sm-digest"));
     }
 
     #[test]
