@@ -227,36 +227,50 @@ fn confirm_available(
         })?;
         let discovery = skill::discover(&root, source.dir.as_deref())?;
         for skill in skills {
-            if discovery.get(skill).is_none() {
-                return Err(Error::Configuration(format!(
-                    "`{}` was not found in {}",
-                    namespaced(&source.source_id, skill),
-                    root.display()
-                )));
+            if discovery.get(skill).is_some() {
+                continue;
             }
+            let name = namespaced(&source.source_id, skill);
+            return Err(Error::Configuration(
+                match discovery.invalid.iter().find(|invalid| &invalid.name == skill) {
+                    Some(invalid) => format!("`{name}`: {}", invalid.reason),
+                    None => format!("`{name}` was not found in {}", root.display()),
+                },
+            ));
         }
         return Ok(());
     }
 
     let previous = lock.sources.get(&source.source_id);
     let wanted: Vec<String> = skills.to_vec();
+    let mut staging = Failures::new();
     let locked = update::stage_selection(
         source,
         previous,
         store,
-        failures,
+        &mut staging,
         &|name| wanted.iter().any(|skill| skill == name),
         &wanted,
     )?;
 
     for skill in skills {
         if !locked.skills.contains_key(skill) {
-            return Err(Error::Configuration(format!(
-                "`{}` was not found in {}",
-                namespaced(&source.source_id, skill),
-                source.transport.url()
-            )));
+            // Staging explains a skill it found but could not use; "not found"
+            // would hide that reason.
+            let reasons: Vec<&str> = staging.iter().collect();
+            return Err(Error::Configuration(if reasons.is_empty() {
+                format!(
+                    "`{}` was not found in {}",
+                    namespaced(&source.source_id, skill),
+                    source.transport.url()
+                )
+            } else {
+                reasons.join("; ")
+            }));
         }
+    }
+    for failure in staging.iter() {
+        failures.push(failure);
     }
 
     let entry = staged

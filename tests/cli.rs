@@ -466,6 +466,30 @@ fn add_and_remove_edit_the_manifest_in_place() {
 }
 
 #[test]
+fn add_reports_why_a_present_skill_is_unusable() {
+    let sandbox = Sandbox::new();
+    sandbox.write_skill("good", "body\n");
+    let local_bad = sandbox.path().join("etc/ai/skills/bad");
+    fs::create_dir_all(&local_bad).unwrap();
+    fs::write(local_bad.join("SKILL.md"), "no frontmatter\n").unwrap();
+    let upstream = git_origin(&[("bad/SKILL.md", "no frontmatter\n")]);
+    sandbox.write_manifest(&format!(
+        "version = 1\n[sources.me]\npath = \"~/etc/ai/skills\"\nskills = [\"good\"]\n\
+         [sources.mp]\ngit = \"{}\"\nskills = []\n",
+        upstream.path().display()
+    ));
+
+    for selection in ["me-bad", "mp-bad"] {
+        let output = sandbox.run(&["add", selection]);
+
+        assert_ne!(code(&output), 0, "{selection}");
+        let errors = stderr(&output);
+        assert!(errors.contains("frontmatter"), "{selection}: {errors}");
+        assert!(!errors.contains("was not found"), "{selection}: {errors}");
+    }
+}
+
+#[test]
 fn verify_passes_after_apply_and_fails_after_tampering() {
     let sandbox = Sandbox::new();
     sandbox.write_skill("codemode", "body\n");
