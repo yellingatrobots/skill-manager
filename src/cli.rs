@@ -95,7 +95,7 @@ pub fn run(cli: Cli) -> Result<i32> {
             };
             let report = apply::run(&paths, network)?;
             print_apply(&report);
-            Ok(exit_code(&report.failures))
+            Ok(finish("failed", &report.failures))
         }
         Command::Update {
             source_id,
@@ -108,7 +108,7 @@ pub fn run(cli: Cli) -> Result<i32> {
             if let Some(applied) = &report.applied {
                 print_apply(applied);
             }
-            Ok(exit_code(&report.failures))
+            Ok(finish("failed", &report.failures))
         }
         Command::Hydrate => {
             let report = hydrate::run(&paths)?;
@@ -119,18 +119,17 @@ pub fn run(cli: Cli) -> Result<i32> {
             for (name, path) in &report.added {
                 println!("  + {name}  {}", path.display());
             }
-            print_failures("failed", &report.failures);
-            Ok(exit_code(&report.failures))
+            Ok(finish("failed", &report.failures))
         }
         Command::Add { selections } => {
             let report = edit::add(&paths, &selections)?;
             print_edit("added", &report);
-            Ok(exit_code(&report.failures))
+            Ok(finish("failed", &report.failures))
         }
         Command::Remove { selections } => {
             let report = edit::remove(&paths, &selections)?;
             print_edit("removed", &report);
-            Ok(exit_code(&report.failures))
+            Ok(finish("failed", &report.failures))
         }
         Command::Info { name, full, json } => {
             let report = info::report(&paths, name.as_deref())?;
@@ -158,8 +157,7 @@ pub fn run(cli: Cli) -> Result<i32> {
             if report.problems.is_empty() {
                 println!("verified {} deployed skill(s)", report.checked);
             }
-            print_failures("problem", &report.problems);
-            Ok(exit_code(&report.problems))
+            Ok(finish("problem", &report.problems))
         }
     }
 }
@@ -223,7 +221,6 @@ fn print_apply(report: &apply::ApplyReport) {
     for path in &report.pruned {
         println!("  pruned {}", path.display());
     }
-    print_failures("failed", &report.failures);
 }
 
 fn print_lock_changes(lock: &std::path::Path, changes: &[SourceDiff]) {
@@ -337,13 +334,12 @@ fn print_skipped(skipped: &[String]) {
     }
 }
 
-fn print_failures(label: &str, failures: &Failures) {
+/// The only way a command reaches a failing exit code, so no failure goes
+/// unreported. Each report's `failures` already holds those of the apply it ran.
+fn finish(label: &str, failures: &Failures) -> i32 {
     for failure in failures.iter() {
         eprintln!("{label}: {failure}");
     }
-}
-
-fn exit_code(failures: &Failures) -> i32 {
     if failures.is_empty() {
         EXIT_OK
     } else {

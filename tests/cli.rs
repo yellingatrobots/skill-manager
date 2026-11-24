@@ -309,6 +309,24 @@ fn update_then_hydrate_rebuilds_the_store_from_the_lock() {
 }
 
 #[test]
+fn update_prints_why_a_selected_skill_could_not_be_locked() {
+    let sandbox = Sandbox::new();
+    let upstream = git_origin(&[("bad/SKILL.md", "no frontmatter\n")]);
+    sandbox.write_manifest(&format!(
+        "version = 1\n[sources.mp]\ngit = \"{}\"\nskills = [\"bad\"]\n",
+        upstream.path().display()
+    ));
+
+    let output = sandbox.run(&["update"]);
+
+    assert_eq!(code(&output), 1, "{}", stderr(&output));
+    let errors = stderr(&output);
+    assert!(errors.contains("failed: "), "{errors}");
+    assert!(errors.contains("frontmatter"), "{errors}");
+    assert!(errors.contains("could not be locked"), "{errors}");
+}
+
+#[test]
 fn update_reports_each_lock_change_and_where_it_was_written() {
     let sandbox = Sandbox::new();
     let upstream = git_origin(&[
